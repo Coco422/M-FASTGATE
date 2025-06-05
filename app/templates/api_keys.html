@@ -1,0 +1,236 @@
+{% extends "base.html" %}
+
+{% block breadcrumb_items %}
+<li class="breadcrumb-item"><a href="/admin/ui/">管理面板</a></li>
+<li class="breadcrumb-item active">API Key 管理</li>
+{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <div>
+                <h1><i class="fas fa-key me-2"></i>API Key 管理</h1>
+                <p class="text-muted">查看和管理所有API密钥</p>
+            </div>
+            <button class="btn btn-primary" onclick="showCreateKeyModal()">
+                <i class="fas fa-plus me-2"></i>创建新Key
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- 搜索和过滤器 -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-body">
+                <form id="filterForm" class="row g-3">
+                    <div class="col-md-3">
+                        <label class="form-label">搜索</label>
+                        <input type="text" class="form-control" id="searchInput" placeholder="按用户名搜索...">
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">状态</label>
+                        <select class="form-select" id="statusFilter">
+                            <option value="">全部</option>
+                            <option value="true">有效</option>
+                            <option value="false">无效</option>
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">来源路径</label>
+                        <input type="text" class="form-control" id="sourcePathFilter" placeholder="来源路径...">
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">操作</label>
+                        <div class="d-flex gap-2">
+                            <button type="button" class="btn btn-outline-primary" onclick="applyFilters()">
+                                <i class="fas fa-search me-1"></i>筛选
+                            </button>
+                            <button type="button" class="btn btn-outline-secondary" onclick="resetFilters()">
+                                <i class="fas fa-undo me-1"></i>重置
+                            </button>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- API Key 列表 -->
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0"><i class="fas fa-list me-2"></i>API Key 列表</h5>
+                <div class="d-flex align-items-center gap-3">
+                    <span class="text-muted">
+                        共 <span id="totalCount">0</span> 个Key
+                    </span>
+                    <button class="btn btn-sm btn-outline-success" onclick="refreshKeys()">
+                        <i class="fas fa-sync-alt me-1"></i>刷新
+                    </button>
+                </div>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead>
+                            <tr>
+                                <th>用户名</th>
+                                <th>API Key</th>
+                                <th>来源路径</th>
+                                <th>状态</th>
+                                <th>使用次数</th>
+                                <th>创建时间</th>
+                                <th>过期时间</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="apiKeysTable">
+                            <tr>
+                                <td colspan="8" class="text-center text-muted">
+                                    <i class="fas fa-spinner fa-spin me-2"></i>
+                                    加载中...
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 分页 -->
+<div class="row mt-3">
+    <div class="col-12">
+        <nav aria-label="分页导航">
+            <ul class="pagination justify-content-center" id="pagination">
+                <!-- 分页按钮将通过JavaScript生成 -->
+            </ul>
+        </nav>
+    </div>
+</div>
+
+<!-- 创建API Key模态框 -->
+<div class="modal fade" id="createKeyModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="fas fa-plus-circle me-2"></i>创建新的API Key
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="createKeyForm">
+                    <div class="mb-3">
+                        <label for="keyUser" class="form-label">用户标识 *</label>
+                        <input type="text" class="form-control" id="keyUser" required 
+                               placeholder="例如: user1, department-ai">
+                        <div class="form-text">用于标识这个Key的归属</div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="keySourcePath" class="form-label">来源路径</label>
+                        <input type="text" class="form-control" id="keySourcePath" 
+                               placeholder="例如: /api/v1/chat">
+                        <div class="form-text">限制此Key可访问的API路径</div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="keyExpiry" class="form-label">过期时间</label>
+                        <input type="datetime-local" class="form-control" id="keyExpiry">
+                        <div class="form-text">留空表示永不过期</div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="keyDescription" class="form-label">描述</label>
+                        <textarea class="form-control" id="keyDescription" rows="2" 
+                                  placeholder="API Key的用途说明..."></textarea>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-primary" onclick="createApiKey()">
+                    <i class="fas fa-save me-2"></i>创建
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 编辑API Key模态框 -->
+<div class="modal fade" id="editKeyModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="fas fa-edit me-2"></i>编辑API Key
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="editKeyForm">
+                    <input type="hidden" id="editKeyId">
+                    <div class="mb-3">
+                        <label for="editKeyUser" class="form-label">用户标识 *</label>
+                        <input type="text" class="form-control" id="editKeyUser" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="editKeySourcePath" class="form-label">来源路径</label>
+                        <input type="text" class="form-control" id="editKeySourcePath">
+                    </div>
+                    <div class="mb-3">
+                        <label for="editKeyExpiry" class="form-label">过期时间</label>
+                        <input type="datetime-local" class="form-control" id="editKeyExpiry">
+                    </div>
+                    <div class="mb-3">
+                        <label for="editKeyDescription" class="form-label">描述</label>
+                        <textarea class="form-control" id="editKeyDescription" rows="2"></textarea>
+                    </div>
+                    <div class="mb-3 form-check">
+                        <input type="checkbox" class="form-check-input" id="editKeyActive">
+                        <label class="form-check-label" for="editKeyActive">
+                            Key有效
+                        </label>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-primary" onclick="updateApiKey()">
+                    <i class="fas fa-save me-2"></i>保存
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 查看Key详情模态框 -->
+<div class="modal fade" id="viewKeyModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="fas fa-eye me-2"></i>API Key 详细信息
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div id="keyDetails">
+                    <!-- 详细信息将通过JavaScript填充 -->
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ api_base }}/ui/static/js/api_keys.js"></script>
+{% endblock %} 

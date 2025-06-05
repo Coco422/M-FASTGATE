@@ -1,0 +1,241 @@
+{% extends "base.html" %}
+
+{% block breadcrumb_items %}
+<li class="breadcrumb-item active">管理面板</li>
+{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <h1><i class="fas fa-tachometer-alt me-2"></i>管理面板</h1>
+        <p class="text-muted">M-FastGate API网关系统管理控制台</p>
+    </div>
+</div>
+
+<!-- 快速统计卡片 -->
+<div class="row mt-4">
+    <div class="col-md-3">
+        <div class="card bg-primary text-white">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h5 class="card-title">API Keys</h5>
+                        <h3 id="totalKeys">-</h3>
+                        <p class="card-text">总数量</p>
+                    </div>
+                    <div class="align-self-center">
+                        <i class="fas fa-key fa-2x"></i>
+                    </div>
+                </div>
+            </div>
+            <div class="card-footer">
+                <a href="/admin/ui/keys" class="text-white">
+                    查看详情 <i class="fas fa-arrow-right"></i>
+                </a>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-3">
+        <div class="card bg-success text-white">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h5 class="card-title">请求总数</h5>
+                        <h3 id="totalRequests">-</h3>
+                        <p class="card-text">今日统计</p>
+                    </div>
+                    <div class="align-self-center">
+                        <i class="fas fa-exchange-alt fa-2x"></i>
+                    </div>
+                </div>
+            </div>
+            <div class="card-footer">
+                <a href="/admin/ui/logs" class="text-white">
+                    查看日志 <i class="fas fa-arrow-right"></i>
+                </a>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-3">
+        <div class="card bg-info text-white">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h5 class="card-title">平均响应</h5>
+                        <h3 id="avgResponseTime">-</h3>
+                        <p class="card-text">毫秒</p>
+                    </div>
+                    <div class="align-self-center">
+                        <i class="fas fa-clock fa-2x"></i>
+                    </div>
+                </div>
+            </div>
+            <div class="card-footer">
+                <a href="/admin/ui/stats" class="text-white">
+                    查看统计 <i class="fas fa-arrow-right"></i>
+                </a>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-3">
+        <div class="card bg-warning text-white">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h5 class="card-title">成功率</h5>
+                        <h3 id="successRate">-</h3>
+                        <p class="card-text">百分比</p>
+                    </div>
+                    <div class="align-self-center">
+                        <i class="fas fa-check-circle fa-2x"></i>
+                    </div>
+                </div>
+            </div>
+            <div class="card-footer">
+                <span class="text-white">
+                    系统状态: <span id="systemStatus">检查中...</span>
+                </span>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 快速操作 -->
+<div class="row mt-4">
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-header">
+                <h5><i class="fas fa-chart-line me-2"></i>最近24小时请求趋势</h5>
+            </div>
+            <div class="card-body">
+                <canvas id="requestChart" height="100"></canvas>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header">
+                <h5><i class="fas fa-bolt me-2"></i>快速操作</h5>
+            </div>
+            <div class="card-body">
+                <div class="d-grid gap-2">
+                    <button class="btn btn-primary" onclick="showCreateKeyModal()">
+                        <i class="fas fa-plus me-2"></i>
+                        创建API Key
+                    </button>
+                    <a href="/admin/ui/logs" class="btn btn-outline-info">
+                        <i class="fas fa-eye me-2"></i>
+                        查看最新日志
+                    </a>
+                    <button class="btn btn-outline-success" onclick="refreshSystemStatus()">
+                        <i class="fas fa-sync me-2"></i>
+                        刷新系统状态
+                    </button>
+                    <a href="/docs" target="_blank" class="btn btn-outline-secondary">
+                        <i class="fas fa-book me-2"></i>
+                        查看API文档
+                    </a>
+                </div>
+            </div>
+        </div>
+        
+        <div class="card mt-3">
+            <div class="card-header">
+                <h5><i class="fas fa-info-circle me-2"></i>系统信息</h5>
+            </div>
+            <div class="card-body">
+                <ul class="list-unstyled">
+                    <li><strong>服务状态:</strong> <span id="serviceStatus" class="badge bg-success">运行中</span></li>
+                    <li><strong>网关地址:</strong> <code id="gatewayUrl">{{ gateway_url }}</code></li>
+                    <li><strong>API端点:</strong> <code>/proxy/miniai/v2/chat/completions</code></li>
+                    <li><strong>管理Token:</strong> <span class="text-muted">已配置</span></li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 最近日志 -->
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5><i class="fas fa-history me-2"></i>最近请求记录</h5>
+                <a href="/admin/ui/logs" class="btn btn-sm btn-outline-primary">查看全部</a>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead>
+                            <tr>
+                                <th>时间</th>
+                                <th>API Key</th>
+                                <th>方法</th>
+                                <th>状态</th>
+                                <th>响应时间</th>
+                                <th>数据大小</th>
+                                <th>类型</th>
+                            </tr>
+                        </thead>
+                        <tbody id="recentLogsTable">
+                            <tr>
+                                <td colspan="7" class="text-center text-muted">
+                                    <i class="fas fa-spinner fa-spin me-2"></i>
+                                    加载中...
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 创建API Key模态框 -->
+<div class="modal fade" id="createKeyModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">创建新的API Key</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="createKeyForm">
+                    <div class="mb-3">
+                        <label for="sourcePath" class="form-label">用户标识</label>
+                        <input type="text" class="form-control" id="sourcePath" placeholder="例如: user1, user2" required>
+                        <div class="form-text">用于区分不同用户的标识</div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="expiresDays" class="form-label">有效期(天)</label>
+                        <input type="number" class="form-control" id="expiresDays" value="30" min="1" max="365">
+                        <div class="form-text">API Key的有效期，默认30天</div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">权限</label>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="chatPermission" checked disabled>
+                            <label class="form-check-label" for="chatPermission">
+                                聊天完成 (chat)
+                            </label>
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-primary" onclick="createApiKey()">创建</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="/admin/ui/static/js/dashboard.js"></script>
+{% endblock %} 
