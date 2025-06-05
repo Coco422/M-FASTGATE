@@ -49,6 +49,21 @@ async def api_keys_page(
     })
 
 
+@router.get("/routes", response_class=HTMLResponse)
+async def proxy_routes_page(
+    request: Request,
+    token: str = Depends(verify_admin_token)
+):
+    """
+    代理路由配置页面
+    """
+    return templates.TemplateResponse("routes.html", {
+        "request": request,
+        "title": "代理路由配置",
+        "api_base": "/admin"
+    })
+
+
 @router.get("/logs", response_class=HTMLResponse)
 async def audit_logs_page(
     request: Request,

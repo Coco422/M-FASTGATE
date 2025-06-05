@@ -227,7 +227,7 @@ def load_config(config_file: Optional[str] = None) -> Config:
     
     Args:
         config_file: 配置文件路径
-        
+    
     Returns:
         Config: 配置对象
     """

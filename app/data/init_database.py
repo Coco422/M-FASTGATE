@@ -86,7 +86,7 @@ class DatabaseInitializer:
     def create_tables(self):
         """创建v0.2.0表结构"""
         print("🔨 创建数据库表...")
-        
+    
         with self.engine.connect() as conn:
             # 1. api_keys表
             conn.execute(text("""
@@ -104,7 +104,7 @@ class DatabaseInitializer:
             )
             """))
             print("  ✅ api_keys表创建成功")
-            
+        
             # 2. audit_logs表 
             conn.execute(text("""
             CREATE TABLE IF NOT EXISTS audit_logs (
@@ -165,9 +165,9 @@ class DatabaseInitializer:
             
             # 创建索引
             self.create_indexes(conn)
-            
-            # 提交事务
-            conn.commit()
+        
+        # 提交事务
+        conn.commit()
     
     def create_indexes(self, conn):
         """创建索引"""
@@ -292,8 +292,8 @@ class DatabaseInitializer:
                 stats['audit_logs'] = result.scalar()
                 
                 return stats
-                
-        except Exception as e:
+        
+    except Exception as e:
             print(f"获取数据库统计失败: {e}")
             return None
 

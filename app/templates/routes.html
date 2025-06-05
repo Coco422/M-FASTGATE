@@ -1,0 +1,379 @@
+{% extends "base.html" %}
+
+{% block breadcrumb_items %}
+<li class="breadcrumb-item"><a href="/admin/ui/">管理面板</a></li>
+<li class="breadcrumb-item active">代理路由配置</li>
+{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <div class="d-flex justify-content-between align-items-center">
+            <div>
+                <h1><i class="fas fa-route me-2"></i>代理路由配置</h1>
+                <p class="text-muted">管理API代理路由规则，配置请求转发和转换逻辑</p>
+            </div>
+            <button class="btn btn-primary" onclick="showCreateRouteModal()">
+                <i class="fas fa-plus me-2"></i>创建路由
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- 路由统计卡片 -->
+<div class="row mt-4">
+    <div class="col-md-3">
+        <div class="card bg-primary text-white">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h5 class="card-title">总路由数</h5>
+                        <h3 id="totalRoutes">-</h3>
+                        <p class="card-text">配置的路由</p>
+                    </div>
+                    <div class="align-self-center">
+                        <i class="fas fa-route fa-2x"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-3">
+        <div class="card bg-success text-white">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h5 class="card-title">活跃路由</h5>
+                        <h3 id="activeRoutes">-</h3>
+                        <p class="card-text">正在使用</p>
+                    </div>
+                    <div class="align-self-center">
+                        <i class="fas fa-check-circle fa-2x"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-3">
+        <div class="card bg-info text-white">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h5 class="card-title">匹配请求</h5>
+                        <h3 id="matchedRequests">-</h3>
+                        <p class="card-text">今日统计</p>
+                    </div>
+                    <div class="align-self-center">
+                        <i class="fas fa-bullseye fa-2x"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-3">
+        <div class="card bg-warning text-white">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h5 class="card-title">平均响应</h5>
+                        <h3 id="avgRouteResponse">-</h3>
+                        <p class="card-text">毫秒</p>
+                    </div>
+                    <div class="align-self-center">
+                        <i class="fas fa-tachometer-alt fa-2x"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 路由列表 -->
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5><i class="fas fa-list me-2"></i>路由列表</h5>
+                <div class="d-flex gap-2">
+                    <button class="btn btn-sm btn-outline-info" onclick="refreshRoutes()">
+                        <i class="fas fa-sync me-2"></i>刷新
+                    </button>
+                    <div class="btn-group">
+                        <button class="btn btn-sm btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown">
+                            <i class="fas fa-filter me-2"></i>筛选
+                        </button>
+                        <ul class="dropdown-menu">
+                            <li><a class="dropdown-item" href="#" onclick="filterRoutes('all')">全部路由</a></li>
+                            <li><a class="dropdown-item" href="#" onclick="filterRoutes('active')">活跃路由</a></li>
+                            <li><a class="dropdown-item" href="#" onclick="filterRoutes('inactive')">禁用路由</a></li>
+                            <li><hr class="dropdown-divider"></li>
+                            <li><a class="dropdown-item" href="#" onclick="filterRoutes('high-priority')">高优先级</a></li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-hover" id="routesTable">
+                        <thead>
+                            <tr>
+                                <th>路由名称</th>
+                                <th>匹配规则</th>
+                                <th>目标地址</th>
+                                <th>优先级</th>
+                                <th>状态</th>
+                                <th>匹配次数</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="routesTableBody">
+                            <tr>
+                                <td colspan="7" class="text-center text-muted">
+                                    <i class="fas fa-spinner fa-spin me-2"></i>
+                                    加载中...
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 创建/编辑路由模态框 -->
+<div class="modal fade" id="routeModal" tabindex="-1" aria-labelledby="routeModalLabel">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="routeModalLabel">
+                    <i class="fas fa-plus me-2"></i>创建代理路由
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="routeForm">
+                    <!-- 基础信息 -->
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="routeName" class="form-label">路由名称 *</label>
+                                <input type="text" class="form-control" id="routeName" required>
+                                <div class="form-text">用于标识路由的友好名称</div>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="routePriority" class="form-label">优先级</label>
+                                <input type="number" class="form-control" id="routePriority" value="100" min="1" max="1000">
+                                <div class="form-text">数字越小优先级越高</div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="routeDescription" class="form-label">描述</label>
+                        <textarea class="form-control" id="routeDescription" rows="2"></textarea>
+                    </div>
+                    
+                    <!-- 匹配规则 -->
+                    <h6 class="border-bottom pb-2 mb-3">
+                        <i class="fas fa-bullseye me-2"></i>匹配规则
+                    </h6>
+                    
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="matchPath" class="form-label">匹配路径 *</label>
+                                <input type="text" class="form-control" id="matchPath" required placeholder="/v1/*">
+                                <div class="form-text">支持通配符和正则表达式</div>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="matchMethod" class="form-label">HTTP方法</label>
+                                <select class="form-select" id="matchMethod">
+                                    <option value="ANY">任意方法</option>
+                                    <option value="GET">GET</option>
+                                    <option value="POST">POST</option>
+                                    <option value="PUT">PUT</option>
+                                    <option value="DELETE">DELETE</option>
+                                    <option value="PATCH">PATCH</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="matchHeaders" class="form-label">匹配请求头 (JSON)</label>
+                                <textarea class="form-control" id="matchHeaders" rows="3" placeholder='{"Content-Type": "application/json"}'></textarea>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="matchBodySchema" class="form-label">匹配请求体 (JSON)</label>
+                                <textarea class="form-control" id="matchBodySchema" rows="3" placeholder='{"model": "gpt-3.5-turbo"}'></textarea>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- 目标配置 -->
+                    <h6 class="border-bottom pb-2 mb-3">
+                        <i class="fas fa-server me-2"></i>目标配置
+                    </h6>
+                    
+                    <div class="row">
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="targetProtocol" class="form-label">协议</label>
+                                <select class="form-select" id="targetProtocol">
+                                    <option value="http">HTTP</option>
+                                    <option value="https">HTTPS</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="targetHost" class="form-label">目标主机 *</label>
+                                <input type="text" class="form-control" id="targetHost" required placeholder="api.example.com:443">
+                                <div class="form-text">主机名:端口</div>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="targetPath" class="form-label">目标路径 *</label>
+                                <input type="text" class="form-control" id="targetPath" required placeholder="/v1/chat/completions">
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="row">
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" id="stripPathPrefix">
+                                    <label class="form-check-label" for="stripPathPrefix">
+                                        剔除路径前缀
+                                    </label>
+                                    <div class="form-text">移除匹配的路径前缀</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="timeout" class="form-label">超时时间 (秒)</label>
+                                <input type="number" class="form-control" id="timeout" value="30" min="1" max="300">
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="retryCount" class="form-label">重试次数</label>
+                                <input type="number" class="form-control" id="retryCount" value="0" min="0" max="5">
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- 转换规则 -->
+                    <h6 class="border-bottom pb-2 mb-3">
+                        <i class="fas fa-exchange-alt me-2"></i>转换规则
+                    </h6>
+                    
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="addHeaders" class="form-label">添加请求头 (JSON)</label>
+                                <textarea class="form-control" id="addHeaders" rows="4" placeholder='{"Authorization": "Bearer your-api-key", "X-Source": "gateway"}'></textarea>
+                                <div class="form-text">API密钥转换通常在这里配置</div>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="removeHeaders" class="form-label">移除请求头 (JSON数组)</label>
+                                <textarea class="form-control" id="removeHeaders" rows="4" placeholder='["host", "user-agent", "x-forwarded-for"]'></textarea>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="addBodyFields" class="form-label">添加请求体字段 (JSON)</label>
+                        <textarea class="form-control" id="addBodyFields" rows="3" placeholder='{"source": "gateway", "version": "0.2.0"}'></textarea>
+                    </div>
+                    
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" id="isActive" checked>
+                        <label class="form-check-label" for="isActive">
+                            启用路由
+                        </label>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-info me-2" onclick="testRoute()">
+                    <i class="fas fa-flask me-2"></i>测试路由
+                </button>
+                <button type="button" class="btn btn-primary" onclick="saveRoute()">
+                    <i class="fas fa-save me-2"></i>保存路由
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 路由测试结果模态框 -->
+<div class="modal fade" id="testResultModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="fas fa-flask me-2"></i>路由测试结果
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div id="testResultContent">
+                    <!-- 测试结果将在这里显示 -->
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 路由详情模态框 -->
+<div class="modal fade" id="routeDetailModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="fas fa-info-circle me-2"></i>路由详情
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div id="routeDetailContent">
+                    <!-- 路由详情将在这里显示 -->
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
+                <button type="button" class="btn btn-primary" onclick="editRouteFromDetail()">
+                    <i class="fas fa-edit me-2"></i>编辑路由
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script src="/admin/ui/static/js/routes.js"></script>
+{% endblock %} 

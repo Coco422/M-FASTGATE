@@ -273,7 +273,8 @@ class AuditService:
         Returns:
             List[AuditLogResponse]: 日志列表
         """
-        with get_db() as db:
+        db = next(get_db())
+        try:
             query = db.query(AuditLogDB)
             
             # 添加过滤条件
@@ -302,6 +303,8 @@ class AuditService:
             db_logs = query.order_by(AuditLogDB.request_time.desc()).offset(offset).limit(limit).all()
             
             return [self._to_response(db_log) for db_log in db_logs]
+        finally:
+            db.close()
     
     def get_log_by_request_id(self, request_id: str) -> Optional[AuditLogResponse]:
         """
@@ -313,11 +316,14 @@ class AuditService:
         Returns:
             AuditLogResponse: 日志信息，不存在则返回 None
         """
-        with get_db() as db:
+        db = next(get_db())
+        try:
             db_log = db.query(AuditLogDB).filter(AuditLogDB.request_id == request_id).first()
             if db_log:
                 return self._to_response(db_log)
             return None
+        finally:
+            db.close()
     
     def get_stats(
         self,
@@ -336,7 +342,8 @@ class AuditService:
         """
         from sqlalchemy import func
         
-        with get_db() as db:
+        db = next(get_db())
+        try:
             query = db.query(AuditLogDB)
             
             if start_time:
@@ -378,6 +385,8 @@ class AuditService:
                     "end_time": end_time.isoformat() if end_time else None
                 }
             }
+        finally:
+            db.close()
     
     def _serialize_headers(self, headers: Optional[Dict[str, str]]) -> Optional[str]:
         """

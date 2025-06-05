@@ -93,7 +93,7 @@ class AuditLogCreate(BaseModel):
     request_body: Optional[str] = None
     response_headers: Optional[str] = None
     response_body: Optional[str] = None
-
+    
 
 class AuditLogUpdate(BaseModel):
     """更新审计日志请求模型（用于流式响应更新）"""
