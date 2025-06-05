@@ -64,21 +64,6 @@ async def audit_logs_page(
     })
 
 
-@router.get("/stats", response_class=HTMLResponse)
-async def statistics_page(
-    request: Request,
-    token: str = Depends(verify_admin_token)
-):
-    """
-    统计信息页面
-    """
-    return templates.TemplateResponse("statistics.html", {
-        "request": request,
-        "title": "统计信息",
-        "api_base": "/admin"
-    })
-
-
 # 静态文件服务
 @router.get("/static/{file_path:path}")
 async def serve_static(file_path: str):

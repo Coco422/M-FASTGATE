@@ -171,6 +171,7 @@
                             <tr>
                                 <th width="140">时间</th>
                                 <th width="120">API Key</th>
+                                <th width="120">用户标识</th>
                                 <th width="80">方法</th>
                                 <th>路径</th>
                                 <th width="100">状态</th>
@@ -183,7 +184,7 @@
                         </thead>
                         <tbody id="logsTable">
                             <tr>
-                                <td colspan="10" class="text-center text-muted">
+                                <td colspan="11" class="text-center text-muted">
                                     <i class="fas fa-spinner fa-spin me-2"></i>
                                     加载中...
                                 </td>
@@ -209,11 +210,11 @@
 
 <!-- 日志详情模态框 -->
 <div class="modal fade" id="logDetailModal" tabindex="-1">
-    <div class="modal-dialog modal-lg">
+    <div class="modal-dialog modal-xl">
         <div class="modal-content">
             <div class="modal-header">
                 <h5 class="modal-title">
-                    <i class="fas fa-info-circle me-2"></i>请求详情
+                    <i class="fas fa-info-circle me-2"></i>请求详细信息
                 </h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
@@ -224,6 +225,9 @@
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
+                <button type="button" class="btn btn-outline-primary" onclick="auditLogsManager.copyLogDetails()">
+                    <i class="fas fa-copy me-1"></i>复制详情
+                </button>
             </div>
         </div>
     </div>

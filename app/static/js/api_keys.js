@@ -1,4 +1,4 @@
- /**
+/**
  * API Keys 管理页面的JavaScript逻辑
  */
 
@@ -9,8 +9,7 @@ class ApiKeysManager {
         this.totalPages = 1;
         this.filters = {
             search: '',
-            status: '',
-            source_path: ''
+            status: ''
         };
         
         this.init();
@@ -25,13 +24,13 @@ class ApiKeysManager {
     setupEventListeners() {
         // 搜索框实时搜索
         $('#searchInput').on('input', debounce(() => {
-            this.filters.search = $('#searchInput').val();
+            this.filters.search = $('#searchInput').val().trim();
             this.currentPage = 1;
             this.loadApiKeys();
         }, 500));
         
         // 过滤器变化
-        $('#statusFilter, #sourcePathFilter').on('change', () => {
+        $('#statusFilter').on('change', () => {
             this.applyFilters();
         });
         
@@ -55,14 +54,11 @@ class ApiKeysManager {
             
             // 添加过滤条件
             if (this.filters.search) {
-                // 注意: 后端API可能不支持用户名搜索，这里假设有相关过滤功能
-                // 实际需要根据后端API调整
+                // Assuming backend supports a 'source_path_like' or similar parameter for searching source_path
+                params.append('source_path_like', this.filters.search); 
             }
             if (this.filters.status !== '') {
                 params.append('is_active', this.filters.status);
-            }
-            if (this.filters.source_path) {
-                params.append('source_path', this.filters.source_path);
             }
             
             const response = await apiClient.get(`/keys?${params}`);
@@ -89,7 +85,7 @@ class ApiKeysManager {
         if (!keys || keys.length === 0) {
             tbody.html(`
                 <tr>
-                    <td colspan="8" class="text-center text-muted py-4">
+                    <td colspan="7" class="text-center text-muted py-4">
                         <i class="fas fa-inbox fa-2x mb-2"></i><br>
                         暂无API Key数据
                     </td>
@@ -116,11 +112,6 @@ class ApiKeysManager {
                             <i class="fas fa-copy"></i>
                         </button>
                     </div>
-                </td>
-                <td>
-                    <span class="badge bg-secondary">
-                        ${escapeHtml(key.source_path || '全局')}
-                    </span>
                 </td>
                 <td>
                     ${key.is_active ? 
@@ -216,7 +207,7 @@ class ApiKeysManager {
     
     applyFilters() {
         this.filters.status = $('#statusFilter').val();
-        this.filters.source_path = $('#sourcePathFilter').val();
+        this.filters.search = $('#searchInput').val().trim();
         this.currentPage = 1;
         this.loadApiKeys();
     }
@@ -224,8 +215,7 @@ class ApiKeysManager {
     resetFilters() {
         $('#searchInput').val('');
         $('#statusFilter').val('');
-        $('#sourcePathFilter').val('');
-        this.filters = { search: '', status: '', source_path: '' };
+        this.filters = { search: '', status: '' };
         this.currentPage = 1;
         this.loadApiKeys();
     }
@@ -389,53 +379,41 @@ class ApiKeysManager {
     showEditKeyModal(key) {
         $('#editKeyId').val(key.key_id);
         $('#editKeySourcePath').val(key.source_path || '');
+        $('#editKeyExpiry').val(key.expires_at ? key.expires_at.substring(0, 16) : '');
         $('#editKeyDescription').val(key.description || '');
         $('#editKeyActive').prop('checked', key.is_active);
         
-        if (key.expires_at) {
-            const date = new Date(key.expires_at);
-            $('#editKeyExpiry').val(date.toISOString().slice(0, 16));
-        } else {
-            $('#editKeyExpiry').val('');
-        }
-        
-        $('#editKeyModal').modal('show');
+        new bootstrap.Modal(document.getElementById('editKeyModal')).show();
     }
     
     async updateApiKey() {
-        try {
-            const keyId = $('#editKeyId').val();
-            const keyData = {
-                source_path: $('#editKeySourcePath').val().trim() || null,
-                description: $('#editKeyDescription').val().trim() || null,
-                is_active: $('#editKeyActive').prop('checked')
-            };
-            
-            // 处理过期时间
-            const expiry = $('#editKeyExpiry').val();
-            if (expiry) {
-                keyData.expires_at = new Date(expiry).toISOString();
-            }
-            
-            if (!keyData.user) {
-                showAlert('请输入用户标识', 'warning');
-                return;
-            }
-            
-            const response = await apiClient.put(`/keys/${keyId}`, keyData);
-            
-            if (response.ok) {
-                showAlert('API Key更新成功！', 'success');
-                $('#editKeyModal').modal('hide');
-                this.loadApiKeys();
-            } else {
-                const error = await response.json();
-                throw new Error(error.detail || '更新失败');
-            }
-            
-        } catch (error) {
-            console.error('更新API Key失败:', error);
-            showAlert('更新API Key失败: ' + error.message, 'danger');
+        const keyId = $('#editKeyId').val();
+        const keyData = {
+            source_path: $('#editKeySourcePath').val().trim() || null,
+            description: $('#editKeyDescription').val().trim() || null,
+            is_active: $('#editKeyActive').is(':checked')
+        };
+        
+        // 处理过期时间
+        const expiry = $('#editKeyExpiry').val();
+        if (expiry) {
+            keyData.expires_at = new Date(expiry).toISOString();
+        }
+        
+        if (!keyData.source_path) {
+            showAlert('请输入用户标识', 'warning');
+            return;
+        }
+        
+        const response = await apiClient.put(`/keys/${keyId}`, keyData);
+        
+        if (response.ok) {
+            showAlert('API Key更新成功！', 'success');
+            $('#editKeyModal').modal('hide');
+            this.loadApiKeys();
+        } else {
+            const error = await response.json();
+            throw new Error(error.detail || '更新失败');
         }
     }
     

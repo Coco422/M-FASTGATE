@@ -198,7 +198,7 @@ async def delete_route(
 @router.get("/logs")
 async def get_audit_logs(
     skip: int = Query(0, ge=0, description="跳过的记录数"),
-    limit: int = Query(50, ge=1, le=1000, description="返回的记录数"),
+    limit: int = Query(50, ge=1, le=10000, description="返回的记录数"),
     api_key: Optional[str] = Query(None, description="按 API Key 过滤"),
     source_path: Optional[str] = Query(None, description="按来源路径过滤"),
     method: Optional[str] = Query(None, description="按请求方法过滤"),

@@ -96,7 +96,7 @@ class MockServerHandler(BaseHTTPRequestHandler):
             "server": "mock-server"
         }
         self.wfile.write(json.dumps(response_data).encode())
-
+        
     def print_header(self, title: str):
         """打印标题"""
         logger.info("\n" + "=" * 60)

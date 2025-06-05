@@ -28,7 +28,7 @@
                 <form id="filterForm" class="row g-3">
                     <div class="col-md-3">
                         <label class="form-label">搜索</label>
-                        <input type="text" class="form-control" id="searchInput" placeholder="按用户名搜索...">
+                        <input type="text" class="form-control" id="searchInput" placeholder="按用户标识搜索...">
                     </div>
                     <div class="col-md-2">
                         <label class="form-label">状态</label>
@@ -38,11 +38,7 @@
                             <option value="false">无效</option>
                         </select>
                     </div>
-                    <div class="col-md-2">
-                        <label class="form-label">来源路径</label>
-                        <input type="text" class="form-control" id="sourcePathFilter" placeholder="来源路径...">
-                    </div>
-                    <div class="col-md-3">
+                    <div class="col-md-5">
                         <label class="form-label">操作</label>
                         <div class="d-flex gap-2">
                             <button type="button" class="btn btn-outline-primary" onclick="applyFilters()">
@@ -79,9 +75,8 @@
                     <table class="table table-hover">
                         <thead>
                             <tr>
-                                <th>用户名</th>
+                                <th>用户标识</th>
                                 <th>API Key</th>
-                                <th>来源路径</th>
                                 <th>状态</th>
                                 <th>使用次数</th>
                                 <th>创建时间</th>
@@ -91,7 +86,7 @@
                         </thead>
                         <tbody id="apiKeysTable">
                             <tr>
-                                <td colspan="8" class="text-center text-muted">
+                                <td colspan="7" class="text-center text-muted">
                                     <i class="fas fa-spinner fa-spin me-2"></i>
                                     加载中...
                                 </td>
@@ -169,12 +164,8 @@
                 <form id="editKeyForm">
                     <input type="hidden" id="editKeyId">
                     <div class="mb-3">
-                        <label for="editKeyUser" class="form-label">用户标识 *</label>
-                        <input type="text" class="form-control" id="editKeyUser" required>
-                    </div>
-                    <div class="mb-3">
-                        <label for="editKeySourcePath" class="form-label">来源路径</label>
-                        <input type="text" class="form-control" id="editKeySourcePath">
+                        <label for="editKeySourcePath" class="form-label">用户标识 *</label>
+                        <input type="text" class="form-control" id="editKeySourcePath" required>
                     </div>
                     <div class="mb-3">
                         <label for="editKeyExpiry" class="form-label">过期时间</label>
