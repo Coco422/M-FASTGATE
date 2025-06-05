@@ -19,6 +19,9 @@ from datetime import datetime
 from typing import Optional, Dict, Any
 import shutil
 import os
+from app.core.logging_config import get_logger, setup_logging
+
+logger = get_logger(__name__)
 
 
 class TestConfig:
@@ -34,16 +37,25 @@ class TestConfig:
             response = requests.get("http://localhost:8514/health", timeout=2)
             if response.status_code == 200:
                 self.BASE_URL = "http://localhost:8514"
+                logger.info("Detected M-FastGate service running on http://localhost:8514")
                 return
-        except:
-            pass
+        except requests.exceptions.ConnectionError:
+            logger.debug("M-FastGate service not found on http://localhost:8514")
+        except Exception as e:
+            logger.error(f"Error checking service on http://localhost:8514: {e}")
             
         try:
             response = requests.get("http://localhost:8000/health", timeout=2)
             if response.status_code == 200:
                 self.BASE_URL = "http://localhost:8000"
-        except:
-            pass
+                logger.info("Detected M-FastGate service running on http://localhost:8000")
+        except requests.exceptions.ConnectionError:
+            logger.debug("M-FastGate service not found on http://localhost:8000")
+        except Exception as e:
+            logger.error(f"Error checking service on http://localhost:8000: {e}")
+        
+        if self.BASE_URL == "http://localhost:8514": # Default value, means no service found
+            logger.warning("M-FastGate service not detected on common ports (8514, 8000). Using default 8514.")
 
 
 class MockServerHandler(BaseHTTPRequestHandler):
@@ -85,39 +97,33 @@ class MockServerHandler(BaseHTTPRequestHandler):
         }
         self.wfile.write(json.dumps(response_data).encode())
 
-
-class Phase1Tester:
-    """Phase 1 功能测试器"""
-    
-    def __init__(self):
-        self.config = TestConfig()
-        self.session = requests.Session()
-        self.created_keys = []  # 存储创建的API Key用于清理
-        self.mock_server = None
-        self.mock_thread = None
-        
     def print_header(self, title: str):
         """打印标题"""
-        print("\n" + "=" * 60)
-        print(f"  {title}")
-        print("=" * 60)
+        logger.info("\n" + "=" * 60)
+        logger.info(f"  {title}")
+        logger.info("=" * 60)
     
     def print_step(self, step: str):
         """打印步骤"""
-        print(f"\n📋 {step}")
-        print("-" * 40)
+        logger.info(f"\n📋 {step}")
+        logger.info("-" * 40)
     
     def print_result(self, success: bool, message: str, data: Any = None):
         """打印结果"""
         icon = "✅" if success else "❌"
-        print(f"{icon} {message}")
+        log_message = f"{icon} {message}"
         if data:
-            print(f"   📄 响应数据: {json.dumps(data, ensure_ascii=False, indent=2)}")
+            log_message += f"\n   📄 响应数据: {json.dumps(data, ensure_ascii=False, indent=2)}"
+        
+        if success:
+            logger.info(log_message)
+        else:
+            logger.error(log_message)
     
     def make_request(self, method: str, url: str, **kwargs) -> Optional[Dict]:
         """发送HTTP请求"""
         try:
-            response = self.session.request(method, url, timeout=10, **kwargs)
+            response = requests.request(method, url, timeout=10, **kwargs)
             
             if response.headers.get('content-type', '').startswith('application/json'):
                 return {
@@ -146,13 +152,13 @@ class Phase1Tester:
         self.mock_thread = threading.Thread(target=run_server, daemon=True)
         self.mock_thread.start()
         time.sleep(1)  # 等待服务器启动
-        print(f"🚀 模拟服务器已启动: {self.config.MOCK_SERVER_URL}")
+        logger.info(f"🚀 模拟服务器已启动: {self.config.MOCK_SERVER_URL}")
     
     def stop_mock_server(self):
         """停止模拟服务器"""
         if self.mock_server:
             self.mock_server.shutdown()
-            print("🛑 模拟服务器已停止")
+            logger.info("🛑 模拟服务器已停止")
     
     def setup_test_routes(self):
         """设置测试路由配置"""

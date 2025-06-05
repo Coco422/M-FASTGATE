@@ -1,4 +1,4 @@
- #!/usr/bin/env python3
+#!/usr/bin/env python3
 """
 API网关功能测试脚本
 
@@ -14,7 +14,9 @@ import httpx
 import json
 import time
 from datetime import datetime
+from app.core.logging_config import get_logger, setup_logging
 
+logger = get_logger(__name__)
 
 class GatewayTester:
     """API网关测试器"""
@@ -46,9 +48,9 @@ class GatewayTester:
                         "key_id": key_info["key_id"],
                         "key_value": key_info["key_value"]
                     })
-                    print(f"✅ Created API Key for user{i}: {key_info['key_value'][:20]}...")
+                    logger.info(f"✅ Created API Key for user{i}: {key_info['key_value'][:20]}...")
                 else:
-                    print(f"❌ Failed to create API Key for user{i}: {response.text}")
+                    logger.error(f"❌ Failed to create API Key for user{i}: {response.text}")
     
     async def test_chat_completions(self, api_key, stream=False):
         """测试聊天完成请求"""
@@ -112,12 +114,12 @@ class GatewayTester:
                 logs = response.json()
                 return logs
             else:
-                print(f"❌ Failed to get audit logs: {response.text}")
+                logger.error(f"❌ Failed to get audit logs: {response.text}")
                 return []
     
     async def run_concurrent_tests(self):
         """运行并发测试"""
-        print("\n🚀 Starting concurrent gateway tests...")
+        logger.info("\n🚀 Starting concurrent gateway tests...")
         
         # 创建并发任务
         tasks = []
@@ -148,59 +150,59 @@ class GatewayTester:
                     stream_count += 1
                 else:
                     normal_count += 1
-                print(f"✅ {user} {request_type} request: {result}")
+                logger.info(f"✅ {user} {request_type} request: {result}")
             else:
                 error_count += 1
-                print(f"❌ {user} {request_type} request failed: {result}")
+                logger.error(f"❌ {user} {request_type} request failed: {result}")
         
-        print(f"\n📊 Test Results:")
-        print(f"   Total requests: {len(results)}")
-        print(f"   Successful: {success_count}")
-        print(f"   Failed: {error_count}")
-        print(f"   Stream requests: {stream_count}")
-        print(f"   Normal requests: {normal_count}")
-        print(f"   Total time: {end_time - start_time:.2f}s")
+        logger.info(f"\n📊 Test Results:")
+        logger.info(f"   Total requests: {len(results)}")
+        logger.info(f"   Successful: {success_count}")
+        logger.info(f"   Failed: {error_count}")
+        logger.info(f"   Stream requests: {stream_count}")
+        logger.info(f"   Normal requests: {normal_count}")
+        logger.info(f"   Total time: {end_time - start_time:.2f}s")
         
         return success_count, error_count
     
     async def validate_audit_logs(self):
         """验证审计日志"""
-        print("\n📋 Checking audit logs...")
+        logger.info("\n📋 Checking audit logs...")
         
         # 等待一下让异步日志写入完成
         await asyncio.sleep(2)
         
         logs = await self.check_audit_logs()
         if not logs:
-            print("❌ No audit logs found")
+            logger.warning("❌ No audit logs found")
             return False
         
-        print(f"✅ Found {len(logs)} audit log entries")
+        logger.info(f"✅ Found {len(logs)} audit log entries")
         
         # 检查最近的日志
         recent_logs = [log for log in logs if log.get("path") == "/proxy/miniai/v2/chat/completions"]
         
-        print(f"✅ Found {len(recent_logs)} gateway-related logs")
+        logger.info(f"✅ Found {len(recent_logs)} gateway-related logs")
         
         # 检查流式和普通请求的日志
         stream_logs = [log for log in recent_logs if log.get("is_stream")]
         normal_logs = [log for log in recent_logs if not log.get("is_stream")]
         
-        print(f"   Stream requests logged: {len(stream_logs)}")
-        print(f"   Normal requests logged: {len(normal_logs)}")
+        logger.info(f"   Stream requests logged: {len(stream_logs)}")
+        logger.info(f"   Normal requests logged: {len(normal_logs)}")
         
         # 显示最新的几条日志
-        print("\n📄 Recent audit logs:")
+        logger.info("\n📄 Recent audit logs:")
         for log in recent_logs[:3]:
-            print(f"   - {log.get('created_at')} | {log.get('api_key', 'N/A')[:10]}... | "
-                  f"{log.get('status_code')} | {log.get('response_time_ms')}ms | "
-                  f"Stream: {log.get('is_stream', False)}")
+            logger.info(f"   - {log.get('created_at')} | {log.get('api_key', 'N/A')[:10]}... | "
+                        f"{log.get('status_code')} | {log.get('response_time_ms')}ms | "
+                        f"Stream: {log.get('is_stream', False)}")
         
         return len(recent_logs) > 0
     
     async def cleanup_test_keys(self):
         """清理测试Key"""
-        print("\n🧹 Cleaning up test keys...")
+        logger.info("\n🧹 Cleaning up test keys...")
         
         async with httpx.AsyncClient() as client:
             for key_info in self.test_keys:
@@ -209,20 +211,20 @@ class GatewayTester:
                 )
                 
                 if response.status_code == 200:
-                    print(f"✅ Deleted key for {key_info['user']}")
+                    logger.info(f"✅ Deleted key for {key_info['user']}")
                 else:
-                    print(f"❌ Failed to delete key for {key_info['user']}")
+                    logger.error(f"❌ Failed to delete key for {key_info['user']}")
     
     async def run_full_test(self):
         """运行完整测试"""
-        print("🎯 M-FastGate API Gateway Test Suite")
-        print("=" * 50)
+        logger.info("🎯 M-FastGate API Gateway Test Suite")
+        logger.info("=" * 50)
         
         try:
             # 1. 设置测试Keys
             await self.setup_test_keys()
             if not self.test_keys:
-                print("❌ Failed to create test keys, aborting")
+                logger.error("❌ Failed to create test keys, aborting")
                 return
             
             # 2. 运行并发测试
@@ -232,17 +234,17 @@ class GatewayTester:
             logs_ok = await self.validate_audit_logs()
             
             # 4. 总结测试结果
-            print("\n" + "=" * 50)
-            print("🎯 Test Summary:")
-            print(f"   API Keys created: {len(self.test_keys)}")
-            print(f"   Successful requests: {success_count}")
-            print(f"   Failed requests: {error_count}")
-            print(f"   Audit logging: {'✅ Working' if logs_ok else '❌ Failed'}")
+            logger.info("\n" + "=" * 50)
+            logger.info("🎯 Test Summary:")
+            logger.info(f"   API Keys created: {len(self.test_keys)}")
+            logger.info(f"   Successful requests: {success_count}")
+            logger.info(f"   Failed requests: {error_count}")
+            logger.info(f"   Audit logging: {'✅ Working' if logs_ok else '❌ Failed'}")
             
             if success_count > 0 and logs_ok:
-                print("\n🎉 API Gateway test PASSED!")
+                logger.info("\n🎉 API Gateway test PASSED!")
             else:
-                print("\n❌ API Gateway test FAILED!")
+                logger.error("\n❌ API Gateway test FAILED!")
         
         finally:
             # 5. 清理
@@ -250,21 +252,24 @@ class GatewayTester:
 
 
 async def main():
-    """主函数"""
+    setup_logging()
+    tester = GatewayTester()
+    
     # 检查服务是否运行
     try:
         async with httpx.AsyncClient() as client:
-            response = await client.get("http://localhost:8514/health")
+            response = await client.get(f"{tester.base_url}/health", timeout=5)
             if response.status_code != 200:
-                print("❌ M-FastGate service is not running. Please start it first.")
+                logger.error("❌ M-FastGate service is not running. Please start it first.")
                 return
-            print("✅ M-FastGate service is running")
-    except:
-        print("❌ Cannot connect to M-FastGate service. Please start it first.")
+            logger.info("✅ M-FastGate service is running")
+    except httpx.ConnectError:
+        logger.error("❌ Cannot connect to M-FastGate service. Please start it first.")
         return
-    
-    # 运行测试
-    tester = GatewayTester()
+    except Exception as e:
+        logger.error(f"❌ An unexpected error occurred while checking service status: {e}")
+        return
+
     await tester.run_full_test()
 
 

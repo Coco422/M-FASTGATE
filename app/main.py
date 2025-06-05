@@ -12,28 +12,34 @@ from .api import admin, proxy, gateway, ui
 from .services.route_manager import route_manager
 from .services.api_gateway_service import api_gateway_service
 from . import __version__
+from .core.logging_config import setup_logging, get_logger
 
+# Get a logger instance for this module
+logger = get_logger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """应用生命周期管理"""
+    # Initialize logging configuration
+    setup_logging()
+
     # 启动时执行
-    print(f"🚀 Starting {settings.app.name} v{settings.app.version}")
+    logger.info(f"🚀 Starting {settings.app.name} v{settings.app.version}")
     
     # 创建数据库表
     create_tables()
-    print("📊 Database tables created")
+    logger.info("📊 Database tables created")
     
     # 初始化API网关服务
-    print("🌐 API Gateway service initialized")
+    logger.info("🌐 API Gateway service initialized")
     
     yield
     
     # 关闭时执行
-    print("🔄 Shutting down...")
+    logger.info("🔄 Shutting down...")
     await route_manager.close()
     await api_gateway_service.close()
-    print("✅ Cleanup completed")
+    logger.info("✅ Cleanup completed")
 
 
 # 创建FastAPI应用

@@ -13,7 +13,9 @@ import httpx
 from ..config import settings
 from ..models.audit_log import AuditLogCreate, generate_request_id
 from ..models.api_key import APIKeyResponse
+from ..core.logging_config import get_logger
 
+logger = get_logger(__name__)
 
 class APIGatewayService:
     """API网关服务"""
@@ -301,8 +303,7 @@ class APIGatewayService:
                 error_message=error_message
             )
         except Exception as e:
-            # 审计日志失败不应该影响业务请求
-            print(f"Failed to create audit log: {e}")
+            logger.error(f"Failed to create audit log: {e}")
     
     
     async def close(self):
