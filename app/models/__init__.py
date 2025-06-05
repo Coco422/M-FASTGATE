@@ -1,6 +1,8 @@
 """
-数据模型包
+数据模型包 - v0.2.0
 """
 
-# Phase 2.4: 导入新的模型路由相关模型
-from .model_endpoint import ModelRouteDB, ModelUsageStatsDB 
+# v0.2.0 核心模型
+from .api_key import APIKeyDB
+from .audit_log import AuditLogDB
+from .proxy_route import ProxyRouteDB 

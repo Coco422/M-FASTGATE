@@ -180,16 +180,13 @@ INSERT OR IGNORE INTO proxy_routes (
 - **数据归档**: 可考虑将历史数据迁移到归档表
 
 ## 数据迁移
+- 暂无数据迁移设计需求
 
 ### 版本管理
 - **当前版本**: v0.2.0
-- **迁移文件**: `migrations/v0.2.0_database_refactor.sql`
-- **迁移工具**: 手动执行SQL脚本
 
 ### 升级路径 (v0.0.1 -> v0.2.0)
-1. 备份当前数据库
-2. 执行数据迁移脚本（保留api_keys和基础audit_logs数据）
-3. 删除废弃表（model_routes, model_usage_stats）
-4. 创建新的proxy_routes表
-5. 验证数据完整性
-6. 更新应用配置 
+1. 已经删除数据库
+2. 重新创建新版 初始化 数据库脚本。将init_databasse.py 放入 data目录下
+3. 验证数据完整性
+4. 更新应用配置 

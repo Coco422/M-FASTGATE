@@ -10,9 +10,9 @@ from .config import settings
 
 # 创建数据库引擎
 engine = create_engine(
-    settings.database.url,
-    echo=settings.database.echo,
-    connect_args={"check_same_thread": False} if "sqlite" in settings.database.url else {}
+    settings.database['url'],
+    echo=settings.database['echo'],
+    connect_args={"check_same_thread": False} if "sqlite" in settings.database['url'] else {}
 )
 
 # 创建会话工厂
@@ -44,12 +44,12 @@ def create_tables():
     创建所有表
     """
     # 确保日志目录存在
-    log_dir = os.path.dirname(settings.logging.file)
+    log_dir = os.path.dirname(settings.logging['file'])
     if log_dir and not os.path.exists(log_dir):
         os.makedirs(log_dir)
     
     # 导入所有模型以确保它们被注册
-    from .models import api_key, audit_log, route_config
+    from .models import api_key, audit_log, proxy_route
     
     # 创建所有表
     Base.metadata.create_all(bind=engine)
