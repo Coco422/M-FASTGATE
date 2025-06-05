@@ -6,7 +6,7 @@ app:
   port: 8514
 
 database:
-  url: "sqlite:///./fastgate.db"
+  url: "sqlite:///./data/fastgate.db"
   echo: false
 
 logging:

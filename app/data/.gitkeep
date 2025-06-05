@@ -1,0 +1,2 @@
+# Keep this directory in git but ignore its contents
+# This directory will contain SQLite database files 
