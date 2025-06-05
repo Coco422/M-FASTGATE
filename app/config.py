@@ -42,12 +42,35 @@ class CloudProxyConfig(BaseSettings):
     base_path: str = "/openapi/proxy"
 
 
+class ModelRoutingAuthConfig(BaseSettings):
+    """模型路由认证配置"""
+    app_key: str = "1_C2D6F4B1183D592E04BA216D71A84F17"
+    system_source: str = "智能客服系统"
+    
+    model_config = {"extra": "ignore"}
+
+
+class ModelRoutingCloudProxyConfig(BaseSettings):
+    """模型路由云端代理配置"""
+    host: str = "10.101.32.14"
+    port: int = 34094
+    base_path: str = "/openapi/proxy"
+    
+    model_config = {"extra": "ignore"}
+
+
 class ModelRoutingConfig(BaseSettings):
     """模型路由配置"""
     enabled: bool = True
-    app_key: str = "1_C2D6F4B1183D592E04BA216D71A84F17"
-    system_source: str = "智能客服系统"
     config_path: str = "config/model_routes.yaml"
+    cloud_proxy: Optional[ModelRoutingCloudProxyConfig] = None
+    auth: Optional[ModelRoutingAuthConfig] = None
+    
+    # 向后兼容的直接字段
+    app_key: Optional[str] = None
+    system_source: Optional[str] = None
+    
+    model_config = {"extra": "ignore"}
 
 
 class APIGatewayConfig(BaseSettings):
@@ -160,7 +183,19 @@ def load_config(config_file: str = None) -> Settings:
         if 'cloud_proxy' in config_data:
             settings.cloud_proxy = CloudProxyConfig(**config_data['cloud_proxy'])
         if 'model_routing' in config_data:
-            settings.model_routing = ModelRoutingConfig(**config_data['model_routing'])
+            routing_data = config_data['model_routing'].copy()
+            
+            # 处理嵌套的cloud_proxy配置
+            if 'cloud_proxy' in routing_data:
+                cloud_proxy_config = ModelRoutingCloudProxyConfig(**routing_data['cloud_proxy'])
+                routing_data['cloud_proxy'] = cloud_proxy_config
+            
+            # 处理嵌套的auth配置
+            if 'auth' in routing_data:
+                auth_config = ModelRoutingAuthConfig(**routing_data['auth'])
+                routing_data['auth'] = auth_config
+            
+            settings.model_routing = ModelRoutingConfig(**routing_data)
         
         return settings
     else:
