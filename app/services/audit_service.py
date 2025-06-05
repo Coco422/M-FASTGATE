@@ -1,81 +1,258 @@
 """
-审计日志服务
+审计日志服务 - v0.2.0
+移除Phase 2.4相关代码，添加first_response_time处理，优化异步处理性能
 """
 
-from datetime import datetime
-from typing import List, Optional
+import asyncio
+import json
+from datetime import datetime, timezone, timedelta
+from typing import List, Optional, Dict, Any
 from sqlalchemy.orm import Session
 from ..models.audit_log import (
     AuditLogDB, AuditLogCreate, AuditLogResponse,
-    generate_log_id
+    generate_log_id, generate_request_id
 )
-from fastapi import Request
-import json
-from typing import Dict, Any
+from ..database import get_db
+from ..config import settings
+import structlog
+
+logger = structlog.get_logger(__name__)
+
+# 定义中国时区
+china_tz = timezone(timedelta(hours=8))
+
+def get_china_time():
+    """获取中国时间"""
+    return datetime.now(china_tz)
+
 
 class AuditService:
-    """审计日志服务"""
-    # 添加配置常量
-    MAX_BODY_SIZE = 100000  # 最大请求/响应体大小（字符）
-    MAX_HEADER_SIZE = 1000  # 最大请求/响应头大小（字符）
+    """审计日志服务 - v0.2.0"""
+    
+    # 配置常量
+    MAX_BODY_SIZE = 10240  # 最大请求/响应体大小（字节）
+    MAX_HEADER_SIZE = 2048  # 最大请求/响应头大小（字节）
     SENSITIVE_HEADERS = {
         'authorization', 'x-api-key', 'cookie', 'set-cookie', 
         'x-auth-token', 'x-access-token', 'proxy-authorization'
     }
-    def __init__(self, db: Session):
-        self.db = db
     
-    def create_log(self, log_data: AuditLogCreate) -> AuditLogResponse:
+    def __init__(self):
+        """初始化审计服务"""
+        self.logger = logger.bind(service="audit_service")
+        self.async_audit = settings.proxy.get('async_audit', True)
+        self.audit_full_request = settings.proxy.get('audit_full_request', True)
+        self.audit_full_response = settings.proxy.get('audit_full_response', True)
+    
+    async def log_request_start(self, request_info: Dict[str, Any]) -> str:
         """
-        创建审计日志
+        记录请求开始（异步）
         
         Args:
-            log_data: 日志数据
-        
+            request_info: 请求信息
+            
         Returns:
-            AuditLogResponse: 创建的日志
+            str: 日志ID
         """
-        # 生成日志ID
-        log_id = generate_log_id()
+        if self.async_audit:
+            # 异步处理，不阻塞主请求
+            asyncio.create_task(self._log_request_start_impl(request_info))
+            return request_info.get("request_id", "")
+        else:
+            return await self._log_request_start_impl(request_info)
+    
+    async def _log_request_start_impl(self, request_info: Dict[str, Any]) -> str:
+        """记录请求开始的实现"""
+        try:
+            log_id = generate_log_id()
+            request_id = request_info.get("request_id") or generate_request_id()
+            
+            # 创建审计日志记录
+            db_log = AuditLogDB(
+                id=log_id,
+                request_id=request_id,
+                api_key=request_info.get("api_key"),
+                source_path=request_info.get("source_path"),
+                method=request_info.get("method"),
+                path=request_info.get("path"),
+                target_url=request_info.get("target_url"),
+                request_time=request_info.get("request_time", get_china_time()),
+                request_size=request_info.get("request_size", 0),
+                user_agent=request_info.get("user_agent"),
+                ip_address=request_info.get("ip_address"),
+                request_headers=self._serialize_headers(request_info.get("request_headers")),
+                request_body=self._serialize_body(request_info.get("request_body"))
+            )
+            
+            # 保存到数据库
+            db = next(get_db())
+            try:
+                db.add(db_log)
+                db.commit()
+            finally:
+                db.close()
+            
+            self.logger.info(
+                "Request start logged",
+                request_id=request_id,
+                log_id=log_id,
+                method=request_info.get("method"),
+                path=request_info.get("path")
+            )
+            
+            return log_id
+            
+        except Exception as e:
+            self.logger.error(
+                "Failed to log request start",
+                error=str(e),
+                request_id=request_info.get("request_id")
+            )
+            return ""
+    
+    async def log_first_response(self, request_id: str, first_response_time: datetime) -> None:
+        """
+        记录首次响应时间（用于流式响应）
         
-        # 创建数据库记录
-        db_log = AuditLogDB(
-            id=log_id,
-            request_id=log_data.request_id,
-            api_key=log_data.api_key,
-            source_path=log_data.source_path,
-            method=log_data.method,
-            path=log_data.path,
-            target_url=log_data.target_url,
-            status_code=log_data.status_code,
-            response_time_ms=log_data.response_time_ms,
-            request_size=log_data.request_size,
-            response_size=log_data.response_size,
-            user_agent=log_data.user_agent,
-            ip_address=log_data.ip_address,
-            error_message=log_data.error_message,
-            is_stream=log_data.is_stream,
-            stream_chunks=log_data.stream_chunks,
-            request_headers=log_data.request_headers,
-            request_body=log_data.request_body,
-            response_headers=log_data.response_headers,
-            response_body=log_data.response_body
-        )
+        Args:
+            request_id: 请求ID
+            first_response_time: 首次响应时间
+        """
+        if self.async_audit:
+            asyncio.create_task(self._log_first_response_impl(request_id, first_response_time))
+        else:
+            await self._log_first_response_impl(request_id, first_response_time)
+    
+    async def _log_first_response_impl(self, request_id: str, first_response_time: datetime) -> None:
+        """记录首次响应时间的实现"""
+        try:
+            db = next(get_db())
+            try:
+                audit_log = db.query(AuditLogDB).filter(AuditLogDB.request_id == request_id).first()
+                if audit_log:
+                    audit_log.first_response_time = first_response_time
+                    db.commit()
+                    
+                    self.logger.debug(
+                        "First response time logged",
+                        request_id=request_id,
+                        first_response_time=first_response_time
+                    )
+                else:
+                    self.logger.warning("Audit log not found for first response", request_id=request_id)
+            finally:
+                db.close()
+                    
+        except Exception as e:
+            self.logger.error(
+                "Failed to log first response time",
+                error=str(e),
+                request_id=request_id
+            )
+    
+    async def log_request_complete(self, request_id: str, response_info: Dict[str, Any]) -> None:
+        """
+        记录请求完成
         
-        self.db.add(db_log)
-        self.db.commit()
-        self.db.refresh(db_log)
+        Args:
+            request_id: 请求ID
+            response_info: 响应信息
+        """
+        if self.async_audit:
+            asyncio.create_task(self._log_request_complete_impl(request_id, response_info))
+        else:
+            await self._log_request_complete_impl(request_id, response_info)
+    
+    async def _log_request_complete_impl(self, request_id: str, response_info: Dict[str, Any]) -> None:
+        """记录请求完成的实现"""
+        try:
+            db = next(get_db())
+            try:
+                audit_log = db.query(AuditLogDB).filter(AuditLogDB.request_id == request_id).first()
+                if audit_log:
+                    # 更新响应信息
+                    audit_log.status_code = response_info.get("status_code")
+                    audit_log.response_time = response_info.get("response_time", get_china_time())
+                    audit_log.response_size = response_info.get("response_size", 0)
+                    audit_log.is_stream = response_info.get("is_stream", False)
+                    audit_log.stream_chunks = response_info.get("stream_chunks", 0)
+                    audit_log.error_message = response_info.get("error_message")
+                    
+                    # 计算响应时间（毫秒）
+                    if audit_log.request_time and audit_log.response_time:
+                        response_time_delta = audit_log.response_time - audit_log.request_time
+                        audit_log.response_time_ms = int(response_time_delta.total_seconds() * 1000)
+                    
+                    # 可选记录响应头和响应体
+                    if self.audit_full_response:
+                        audit_log.response_headers = self._serialize_headers(response_info.get("response_headers"))
+                        audit_log.response_body = self._serialize_body(response_info.get("response_body"))
+                    
+                    db.commit()
+                    
+                    self.logger.info(
+                        "Request complete logged",
+                        request_id=request_id,
+                        status_code=response_info.get("status_code"),
+                        response_time_ms=audit_log.response_time_ms,
+                        is_stream=audit_log.is_stream
+                    )
+                else:
+                    self.logger.warning("Audit log not found for completion", request_id=request_id)
+            finally:
+                db.close()
+                    
+        except Exception as e:
+            self.logger.error(
+                "Failed to log request complete",
+                error=str(e),
+                request_id=request_id
+            )
+    
+    async def log_stream_chunk(self, request_id: str, chunk_size: int) -> None:
+        """
+        记录流式响应块信息（增量更新）
         
-        return self._to_response(db_log)
+        Args:
+            request_id: 请求ID
+            chunk_size: 块大小
+        """
+        if not self.async_audit:
+            return  # 只在异步模式下支持
+            
+        asyncio.create_task(self._log_stream_chunk_impl(request_id, chunk_size))
+    
+    async def _log_stream_chunk_impl(self, request_id: str, chunk_size: int) -> None:
+        """记录流式响应块的实现"""
+        try:
+            db = next(get_db())
+            try:
+                audit_log = db.query(AuditLogDB).filter(AuditLogDB.request_id == request_id).first()
+                if audit_log:
+                    # 增量更新
+                    audit_log.stream_chunks = (audit_log.stream_chunks or 0) + 1
+                    audit_log.response_size = (audit_log.response_size or 0) + chunk_size
+                    db.commit()
+            finally:
+                db.close()
+                    
+        except Exception as e:
+            # 流式块记录失败不应该影响主流程，只记录警告
+            self.logger.warning(
+                "Failed to log stream chunk",
+                error=str(e),
+                request_id=request_id
+            )
     
     def get_logs(
         self,
-        api_key: str = None,
-        source_path: str = None,
-        method: str = None,
-        status_code: int = None,
-        start_time: datetime = None,
-        end_time: datetime = None,
+        api_key: Optional[str] = None,
+        source_path: Optional[str] = None,
+        method: Optional[str] = None,
+        status_code: Optional[int] = None,
+        start_time: Optional[datetime] = None,
+        end_time: Optional[datetime] = None,
+        is_stream: Optional[bool] = None,
         limit: int = 100,
         offset: int = 0
     ) -> List[AuditLogResponse]:
@@ -89,52 +266,42 @@ class AuditService:
             status_code: 过滤状态码
             start_time: 开始时间
             end_time: 结束时间
+            is_stream: 过滤流式响应
             limit: 限制数量
             offset: 偏移量
         
         Returns:
             List[AuditLogResponse]: 日志列表
         """
-        query = self.db.query(AuditLogDB)
-        
-        # 添加过滤条件
-        if api_key:
-            query = query.filter(AuditLogDB.api_key == api_key)
-        
-        if source_path:
-            query = query.filter(AuditLogDB.source_path == source_path)
-        
-        if method:
-            query = query.filter(AuditLogDB.method == method)
-        
-        if status_code:
-            query = query.filter(AuditLogDB.status_code == status_code)
-        
-        if start_time:
-            query = query.filter(AuditLogDB.created_at >= start_time)
-        
-        if end_time:
-            query = query.filter(AuditLogDB.created_at <= end_time)
-        
-        # 排序和分页
-        db_logs = query.order_by(AuditLogDB.created_at.desc()).offset(offset).limit(limit).all()
-        
-        return [self._to_response(db_log) for db_log in db_logs]
-    
-    def get_log_by_id(self, log_id: str) -> Optional[AuditLogResponse]:
-        """
-        根据ID获取日志
-        
-        Args:
-            log_id: 日志ID
-        
-        Returns:
-            AuditLogResponse: 日志信息，不存在则返回 None
-        """
-        db_log = self.db.query(AuditLogDB).filter(AuditLogDB.id == log_id).first()
-        if db_log:
-            return self._to_response(db_log)
-        return None
+        with get_db() as db:
+            query = db.query(AuditLogDB)
+            
+            # 添加过滤条件
+            if api_key:
+                query = query.filter(AuditLogDB.api_key == api_key)
+            
+            if source_path:
+                query = query.filter(AuditLogDB.source_path == source_path)
+            
+            if method:
+                query = query.filter(AuditLogDB.method == method)
+            
+            if status_code:
+                query = query.filter(AuditLogDB.status_code == status_code)
+            
+            if start_time:
+                query = query.filter(AuditLogDB.request_time >= start_time)
+            
+            if end_time:
+                query = query.filter(AuditLogDB.request_time <= end_time)
+                
+            if is_stream is not None:
+                query = query.filter(AuditLogDB.is_stream == is_stream)
+            
+            # 排序和分页
+            db_logs = query.order_by(AuditLogDB.request_time.desc()).offset(offset).limit(limit).all()
+            
+            return [self._to_response(db_log) for db_log in db_logs]
     
     def get_log_by_request_id(self, request_id: str) -> Optional[AuditLogResponse]:
         """
@@ -146,16 +313,17 @@ class AuditService:
         Returns:
             AuditLogResponse: 日志信息，不存在则返回 None
         """
-        db_log = self.db.query(AuditLogDB).filter(AuditLogDB.request_id == request_id).first()
-        if db_log:
-            return self._to_response(db_log)
-        return None
+        with get_db() as db:
+            db_log = db.query(AuditLogDB).filter(AuditLogDB.request_id == request_id).first()
+            if db_log:
+                return self._to_response(db_log)
+            return None
     
     def get_stats(
         self,
-        start_time: datetime = None,
-        end_time: datetime = None
-    ) -> dict:
+        start_time: Optional[datetime] = None,
+        end_time: Optional[datetime] = None
+    ) -> Dict[str, Any]:
         """
         获取统计信息
         
@@ -164,374 +332,125 @@ class AuditService:
             end_time: 结束时间
         
         Returns:
-            dict: 统计数据
+            Dict[str, Any]: 统计数据
         """
-        from sqlalchemy import func, distinct
+        from sqlalchemy import func
         
-        query = self.db.query(AuditLogDB)
-        
-        if start_time:
-            query = query.filter(AuditLogDB.created_at >= start_time)
-        
-        if end_time:
-            query = query.filter(AuditLogDB.created_at <= end_time)
-        
-        # 基础统计
-        total_requests = query.count()
-        
-        # 按状态码统计
-        status_stats = self.db.query(
-            AuditLogDB.status_code,
-            func.count(AuditLogDB.id).label('count')
-        ).group_by(AuditLogDB.status_code)
-        
-        if start_time:
-            status_stats = status_stats.filter(AuditLogDB.created_at >= start_time)
-        if end_time:
-            status_stats = status_stats.filter(AuditLogDB.created_at <= end_time)
-        
-        status_counts = {str(stat.status_code): stat.count for stat in status_stats.all()}
-        
-        # 按来源路径统计
-        source_stats = self.db.query(
-            AuditLogDB.source_path,
-            func.count(AuditLogDB.id).label('count')
-        ).filter(AuditLogDB.source_path.isnot(None)).group_by(AuditLogDB.source_path)
-        
-        if start_time:
-            source_stats = source_stats.filter(AuditLogDB.created_at >= start_time)
-        if end_time:
-            source_stats = source_stats.filter(AuditLogDB.created_at <= end_time)
-        
-        source_counts = {stat.source_path: stat.count for stat in source_stats.all()}
-        
-        # 平均响应时间
-        avg_response_time = query.with_entities(
-            func.avg(AuditLogDB.response_time_ms)
-        ).scalar() or 0
-        
-        return {
-            "total_requests": total_requests,
-            "status_counts": status_counts,
-            "source_counts": source_counts,
-            "avg_response_time_ms": round(float(avg_response_time), 2)
-        }
+        with get_db() as db:
+            query = db.query(AuditLogDB)
+            
+            if start_time:
+                query = query.filter(AuditLogDB.request_time >= start_time)
+            
+            if end_time:
+                query = query.filter(AuditLogDB.request_time <= end_time)
+            
+            # 基础统计
+            total_requests = query.count()
+            
+            # 按状态码统计
+            status_stats = db.query(
+                AuditLogDB.status_code,
+                func.count(AuditLogDB.id).label('count')
+            )
+            
+            if start_time:
+                status_stats = status_stats.filter(AuditLogDB.request_time >= start_time)
+            if end_time:
+                status_stats = status_stats.filter(AuditLogDB.request_time <= end_time)
+            
+            status_stats = status_stats.group_by(AuditLogDB.status_code)
+            status_counts = {str(stat.status_code) if stat.status_code else 'null': stat.count for stat in status_stats.all()}
+            
+            # 流式响应统计
+            stream_count = query.filter(AuditLogDB.is_stream == True).count()
+            
+            # 平均响应时间
+            avg_response_time = db.query(func.avg(AuditLogDB.response_time_ms)).scalar() or 0
+            
+            return {
+                "total_requests": total_requests,
+                "status_counts": status_counts,
+                "stream_requests": stream_count,
+                "avg_response_time_ms": round(avg_response_time, 2),
+                "period": {
+                    "start_time": start_time.isoformat() if start_time else None,
+                    "end_time": end_time.isoformat() if end_time else None
+                }
+            }
     
-    def get_hourly_metrics(self, hours: int = 24) -> List[dict]:
+    def _serialize_headers(self, headers: Optional[Dict[str, str]]) -> Optional[str]:
         """
-        获取按小时统计的指标数据
-        """
-        from sqlalchemy import func, extract
-        from datetime import datetime, timedelta
-        
-        # 计算开始时间
-        start_time = datetime.utcnow() - timedelta(hours=hours)
-        
-        # 按小时分组统计 - 总请求数和平均响应时间
-        hourly_stats = self.db.query(
-            extract('hour', AuditLogDB.created_at).label('hour'),
-            func.count(AuditLogDB.id).label('requests'),
-            func.avg(AuditLogDB.response_time_ms).label('avg_response_time')
-        ).filter(
-            AuditLogDB.created_at >= start_time
-        ).group_by(
-            extract('hour', AuditLogDB.created_at)
-        ).all()
-        
-        # 按小时分组统计 - 成功请求数 (200-299状态码)
-        success_stats = self.db.query(
-            extract('hour', AuditLogDB.created_at).label('hour'),
-            func.count(AuditLogDB.id).label('success_count')
-        ).filter(
-            AuditLogDB.created_at >= start_time,
-            AuditLogDB.status_code >= 200,
-            AuditLogDB.status_code < 300
-        ).group_by(
-            extract('hour', AuditLogDB.created_at)
-        ).all()
-        
-        # 将成功请求数转换为字典，以便快速查找
-        success_dict = {int(stat.hour): stat.success_count for stat in success_stats}
-        
-        # 转换为字典格式
-        result = []
-        for stat in hourly_stats:
-            hour = int(stat.hour)
-            total_requests = int(stat.requests)
-            success_count = success_dict.get(hour, 0)
-            
-            # 计算成功率
-            success_rate = (success_count / total_requests * 100) if total_requests > 0 else 0
-            
-            result.append({
-                "hour": hour,
-                "requests": total_requests,
-                "avg_response_time": round(float(stat.avg_response_time or 0), 2),
-                "success_rate": round(float(success_rate), 2)
-            })
-        
-        return result
-    
-    def get_trends_data(self, days: int = 30, group_by: str = "day") -> dict:
-        """
-        获取趋势数据
-        """
-        from sqlalchemy import func, extract
-        from datetime import datetime, timedelta
-        
-        # 计算开始时间
-        start_time = datetime.utcnow() - timedelta(days=days)
-        
-        if group_by == "day":
-            # 按天分组 - 使用DATE函数
-            group_field = func.date(AuditLogDB.created_at)
-        else:
-            # 按小时分组 - 使用日期截断到小时
-            group_field = func.strftime('%Y-%m-%d %H:00:00', AuditLogDB.created_at)
-        
-        # 按时间分组统计 - 总请求数和平均响应时间
-        trends_stats = self.db.query(
-            group_field.label('period'),
-            func.count(AuditLogDB.id).label('requests'),
-            func.avg(AuditLogDB.response_time_ms).label('avg_response_time')
-        ).filter(
-            AuditLogDB.created_at >= start_time
-        ).group_by(
-            group_field
-        ).order_by(
-            group_field
-        ).all()
-        
-        # 按时间分组统计 - 错误请求数 (400+状态码)
-        error_stats = self.db.query(
-            group_field.label('period'),
-            func.count(AuditLogDB.id).label('error_count')
-        ).filter(
-            AuditLogDB.created_at >= start_time,
-            AuditLogDB.status_code >= 400
-        ).group_by(
-            group_field
-        ).all()
-        
-        # 将错误请求数转换为字典
-        error_dict = {str(stat.period): stat.error_count for stat in error_stats}
-        
-        # 转换为前端需要的格式
-        labels = []
-        requests = []
-        response_time = []
-        error_rate = []
-        
-        for stat in trends_stats:
-            period_str = str(stat.period)
-            total_requests = int(stat.requests)
-            error_count = error_dict.get(period_str, 0)
-            
-            labels.append(period_str)
-            requests.append(total_requests)
-            response_time.append(round(float(stat.avg_response_time or 0), 2))
-            
-            # 计算错误率
-            err_rate = (error_count / total_requests * 100) if total_requests > 0 else 0
-            error_rate.append(round(float(err_rate), 2))
-        
-        return {
-            "labels": labels,
-            "requests": requests,
-            "responseTime": response_time,
-            "errorRate": error_rate
-        }
-    
-    async def collect_request_info(self, request: Request) -> Dict[str, Any]:
-        """
-        收集完整的请求信息
+        序列化请求头（移除敏感信息并限制大小）
         
         Args:
-            request: FastAPI请求对象
+            headers: 请求头字典
             
         Returns:
-            Dict: 包含请求头和请求体的字典
+            Optional[str]: JSON字符串或None
         """
-        # 收集请求头
-        request_headers = dict(request.headers)
-        sanitized_headers = self._sanitize_headers(request_headers)
-        headers_json = json.dumps(sanitized_headers, ensure_ascii=False)
+        if not headers or not self.audit_full_request:
+            return None
         
-        # 截断过长的头信息
-        if len(headers_json) > self.MAX_HEADER_SIZE:
-            headers_json = headers_json[:self.MAX_HEADER_SIZE] + "...[TRUNCATED]"
-        
-        # 收集请求体
-        request_body = None
-        request_size = 0
         try:
-            body_bytes = await request.body()
-            request_size = len(body_bytes) if body_bytes else 0
-            if body_bytes:
-                # 尝试解码为文本
-                try:
-                    body_text = body_bytes.decode('utf-8')
-                    # 截断过长的请求体
-                    if len(body_text) > self.MAX_BODY_SIZE:
-                        body_text = body_text[:self.MAX_BODY_SIZE] + "...[TRUNCATED]"
-                    request_body = body_text
-                except UnicodeDecodeError:
-                    # 如果不能解码为文本，记录为二进制数据
-                    request_body = f"[BINARY_DATA:{len(body_bytes)}_bytes]"
-        except Exception as e:
-            request_body = f"[ERROR_READING_BODY:{str(e)}]"
-        
-        return {
-            "request_headers": headers_json,
-            "request_body": request_body,
-            "request_size": request_size
-        }
-    
-    def collect_response_info(self, response_content: bytes, response_headers: Dict[str, str]) -> Dict[str, Any]:
-        """
-        收集完整的响应信息
-        
-        Args:
-            response_content: 响应内容
-            response_headers: 响应头
-            
-        Returns:
-            Dict: 包含响应头和响应体的字典
-        """
-        # 收集响应头
-        sanitized_headers = self._sanitize_headers(response_headers)
-        headers_json = json.dumps(sanitized_headers, ensure_ascii=False)
-        
-        # 截断过长的头信息
-        if len(headers_json) > self.MAX_HEADER_SIZE:
-            headers_json = headers_json[:self.MAX_HEADER_SIZE] + "...[TRUNCATED]"
-        
-        # 收集响应体
-        response_body = None
-        response_size = len(response_content) if response_content else 0
-        
-        if response_content:
-            try:
-                # 尝试解码为文本
-                body_text = response_content.decode('utf-8')
-                # 截断过长的响应体
-                if len(body_text) > self.MAX_BODY_SIZE:
-                    body_text = body_text[:self.MAX_BODY_SIZE] + "...[TRUNCATED]"
-                response_body = body_text
-            except UnicodeDecodeError:
-                # 如果不能解码为文本，记录为二进制数据
-                response_body = f"[BINARY_DATA:{response_size}_bytes]"
-        
-        return {
-            "response_headers": headers_json,
-            "response_body": response_body,
-            "response_size": response_size
-        }
-    
-    def _sanitize_headers(self, headers: Dict[str, str]) -> Dict[str, str]:
-        """
-        清理敏感的请求头信息
-        
-        Args:
-            headers: 原始请求头
-            
-        Returns:
-            Dict: 清理后的请求头
-        """
-        sanitized = {}
-        for key, value in headers.items():
-            key_lower = key.lower()
-            if key_lower in self.SENSITIVE_HEADERS:
-                # 对敏感信息进行脱敏处理
-                if len(value) > 10:
-                    sanitized[key] = value[:4] + "****" + value[-4:]
+            # 移除敏感头部
+            sanitized = {}
+            for key, value in headers.items():
+                if key.lower() not in self.SENSITIVE_HEADERS:
+                    sanitized[key] = value
                 else:
-                    sanitized[key] = "****"
+                    sanitized[key] = "[REDACTED]"
+            
+            json_str = json.dumps(sanitized, ensure_ascii=False)
+            
+            # 限制大小
+            if len(json_str) > self.MAX_HEADER_SIZE:
+                return json_str[:self.MAX_HEADER_SIZE] + "...[TRUNCATED]"
+            
+            return json_str
+            
+        except Exception as e:
+            self.logger.warning("Failed to serialize headers", error=str(e))
+            return None
+    
+    def _serialize_body(self, body: Optional[Any]) -> Optional[str]:
+        """
+        序列化请求/响应体（限制大小）
+        
+        Args:
+            body: 请求/响应体
+            
+        Returns:
+            Optional[str]: JSON字符串或None
+        """
+        if body is None or not self.audit_full_request:
+            return None
+        
+        try:
+            if isinstance(body, (dict, list)):
+                json_str = json.dumps(body, ensure_ascii=False)
+            elif isinstance(body, str):
+                json_str = body
             else:
-                sanitized[key] = value
-        return sanitized
-    
-    async def create_enhanced_log(
-        self, 
-        request: Request,
-        request_id: str,
-        api_key: Optional[str] = None,
-        source_path: Optional[str] = None,
-        target_url: Optional[str] = None,
-        status_code: int = 200,
-        response_time_ms: int = 0,
-        response_content: Optional[bytes] = None,
-        response_headers: Optional[Dict[str, str]] = None,
-        error_message: Optional[str] = None,
-        is_stream: bool = False,
-        stream_chunks: int = 0,
-        model_name: Optional[str] = None,
-        routing_time_ms: int = 0,
-        request_body: Optional[dict] = None
-    ) -> AuditLogResponse:
-        """
-        创建增强的审计日志，包含完整的请求和响应信息
-        """
-        # 收集请求信息
-        request_info = await self.collect_request_info(request)
-        
-        # 收集响应信息
-        response_info = {"response_size": 0}
-        if response_content is not None and response_headers is not None:
-            response_info = self.collect_response_info(response_content, response_headers)
-        
-        # 构建审计日志数据
-        log_data = AuditLogCreate(
-            request_id=request_id,
-            api_key=api_key,
-            source_path=source_path,
-            method=request.method,
-            path=str(request.url.path),
-            target_url=target_url,
-            status_code=status_code,
-            response_time_ms=response_time_ms,
-            request_size=request_info.get("request_size", 0),
-            response_size=response_info.get("response_size", 0),
-            user_agent=request.headers.get("User-Agent"),
-            ip_address=self._get_client_ip(request),
-            error_message=error_message,
-            is_stream=is_stream,
-            stream_chunks=stream_chunks,
-            request_headers=request_info.get("request_headers"),
-            request_body=request_body if request_body else request_info.get("request_body"),
-            response_headers=response_info.get("response_headers"),
-            response_body=response_info.get("response_body"),
-            # Phase 2.4: Add model routing information
-            model_name=model_name,
-            routing_time_ms=routing_time_ms
-        )
-        
-        return self.create_log(log_data)
-    
-    def _get_client_ip(self, request: Request) -> str:
-        """获取客户端IP地址"""
-        # 优先从代理头获取真实IP
-        forwarded_for = request.headers.get("X-Forwarded-For")
-        if forwarded_for:
-            return forwarded_for.split(",")[0].strip()
-        
-        real_ip = request.headers.get("X-Real-IP")
-        if real_ip:
-            return real_ip
-        
-        # 回退到直接连接IP
-        if hasattr(request, "client") and request.client:
-            return request.client.host
-        
-        return "unknown"
+                json_str = str(body)
+            
+            # 限制大小
+            if len(json_str) > self.MAX_BODY_SIZE:
+                return json_str[:self.MAX_BODY_SIZE] + "...[TRUNCATED]"
+            
+            return json_str
+            
+        except Exception as e:
+            self.logger.warning("Failed to serialize body", error=str(e))
+            return None
     
     def _to_response(self, db_log: AuditLogDB) -> AuditLogResponse:
         """
-        转换数据库模型到响应模型
+        转换数据库记录为响应模型
         
         Args:
-            db_log: 数据库模型
-        
+            db_log: 数据库记录
+            
         Returns:
             AuditLogResponse: 响应模型
         """
@@ -544,21 +463,21 @@ class AuditService:
             path=db_log.path,
             target_url=db_log.target_url,
             status_code=db_log.status_code,
+            request_time=db_log.request_time,
+            first_response_time=db_log.first_response_time,
+            response_time=db_log.response_time,
             response_time_ms=db_log.response_time_ms,
             request_size=db_log.request_size,
             response_size=db_log.response_size,
             user_agent=db_log.user_agent,
             ip_address=db_log.ip_address,
-            error_message=db_log.error_message,
-            created_at=db_log.created_at,
             is_stream=db_log.is_stream,
             stream_chunks=db_log.stream_chunks,
+            error_message=db_log.error_message,
             request_headers=db_log.request_headers,
             request_body=db_log.request_body,
             response_headers=db_log.response_headers,
             response_body=db_log.response_body,
-            # Phase 2.4: Handle new fields with defaults for backward compatibility
-            model_name=getattr(db_log, 'model_name', None),
-            routing_time_ms=getattr(db_log, 'routing_time_ms', 0)
+            created_at=db_log.created_at
         )
  

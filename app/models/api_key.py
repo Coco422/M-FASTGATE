@@ -70,8 +70,8 @@ def generate_api_key() -> tuple[str, str]:
     Returns:
         tuple: (key_id, key_value)
     """
-    key_id = f"{settings.security.key_prefix}{uuid.uuid4().hex[:12]}"
-    key_value = f"{settings.security.key_prefix}{secrets.token_urlsafe(32)}"
+    key_id = f"{settings.security['key_prefix']}{uuid.uuid4().hex[:12]}"
+    key_value = f"{settings.security['key_prefix']}{secrets.token_urlsafe(32)}"
     return key_id, key_value
 
 
@@ -86,6 +86,6 @@ def calculate_expires_at(days: int = None) -> datetime:
         datetime: 过期时间
     """
     if days is None:
-        days = settings.security.default_expiry_days
+        days = settings.security['default_expiry_days']
     
     return datetime.utcnow() + timedelta(days=days) 

@@ -1,43 +1,49 @@
 """
-代理接口
+M-FastGate v0.2.0 统一代理接口
 """
 
 import time
-from fastapi import APIRouter, Request, HTTPException, status, Depends, Response
-from fastapi.responses import StreamingResponse
+from datetime import datetime
+from fastapi import APIRouter, Request, HTTPException, Depends
+from fastapi.responses import StreamingResponse, Response
 from sqlalchemy.orm import Session
 from ..database import get_db
-from ..middleware.auth import api_key_auth, get_source_path, get_client_ip, get_user_agent
-from ..services.route_manager import route_manager
-from ..services.dynamic_route_manager import DynamicRouteManager
+from ..middleware.auth import api_key_auth, get_source_path, get_client_ip
+from ..services.proxy_engine import ProxyEngine
+from ..services.route_matcher import RouteMatcher
 from ..services.audit_service import AuditService
-from ..services.intelligent_router import IntelligentRouter
 from ..models.api_key import APIKeyResponse
-from ..models.audit_log import AuditLogCreate, generate_request_id
+from ..models.audit_log import generate_request_id
 from ..config import settings
 
 router = APIRouter()
 
 
-@router.api_route("/smart/{path:path}", methods=["POST"])
-async def smart_proxy_request(
+@router.api_route("/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"])
+async def universal_proxy(
     path: str,
     request: Request,
     db: Session = Depends(get_db),
     api_key_info: APIKeyResponse = Depends(api_key_auth)
 ):
     """
-    智能代理转发接口 - Phase 2.4 核心功能
-    根据请求体中的model字段智能路由到对应的模型服务
+    统一代理接口 - v0.2.0核心功能
+    
+    支持：
+    - 路径匹配和前缀剥离
+    - 请求体内容匹配
+    - 请求头和请求体转换
+    - 流式和非流式响应
+    - 完整的审计日志
     
     Args:
         path: 请求路径
-        request: FastAPI请求对象
+        request: FastAPI请求对象  
         db: 数据库会话
-        api_key_info: API Key信息
+        api_key_info: API密钥信息
         
     Returns:
-        Response: 代理响应
+        Response: 代理响应或错误响应
     """
     start_time = time.time()
     request_id = generate_request_id()
@@ -45,484 +51,176 @@ async def smart_proxy_request(
     # 获取请求元信息
     source_path = get_source_path(request)
     client_ip = get_client_ip(request)
-    user_agent = get_user_agent(request)
-    request_path = f"/smart/{path}"
+    request_path = f"/{path}"
     
-    # 检查模型路由功能是否启用
-    if not getattr(settings.model_routing, 'enabled', True):
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Model routing service is disabled"
-        )
-    
-    # 初始化变量
-    request_body = None
-    route_result = None
-    model_name = None
+    # 初始化服务
+    route_matcher = RouteMatcher()
+    proxy_engine = ProxyEngine()
+    audit_service = AuditService()
     
     try:
-        # 获取请求体
-        request_body = await request.json()
-        model_name = request_body.get("model")
+        # 获取请求体（如果存在）
+        request_body = None
+        if request.method in ["POST", "PUT", "PATCH"]:
+            content_type = request.headers.get("content-type", "")
+            if "application/json" in content_type:
+                request_body = await request.json()
+            elif content_type:
+                # 其他类型的请求体，读取为bytes
+                request_body = await request.body()
         
-        # 创建智能路由器
-        intelligent_router = IntelligentRouter(db)
+        # 获取所有活跃的代理路由
+        from ..models.proxy_route import ProxyRouteDB
+        routes = db.query(ProxyRouteDB).filter(ProxyRouteDB.is_active == True).all()
         
-        # 执行智能路由
-        route_result = await intelligent_router.route_request(
-            request=request,
-            request_body=request_body,
-            api_key=api_key_info.key_value,
-            source_path=source_path or api_key_info.source_path
+        # 转换为字典格式
+        route_dicts = []
+        for route in routes:
+            route_dict = {
+                "route_id": route.route_id,
+                "route_name": route.route_name,
+                "description": route.description,
+                "match_path": route.match_path,
+                "match_method": route.match_method,
+                "match_headers": route.match_headers,
+                "match_body_schema": route.match_body_schema,
+                "target_host": route.target_host,
+                "target_path": route.target_path,
+                "target_protocol": route.target_protocol,
+                "strip_path_prefix": route.strip_path_prefix,
+                "add_headers": route.add_headers,
+                "add_body_fields": route.add_body_fields,
+                "remove_headers": route.remove_headers,
+                "timeout": route.timeout,
+                "retry_count": route.retry_count,
+                "is_active": route.is_active,
+                "priority": route.priority
+            }
+            route_dicts.append(route_dict)
+        
+        # 构建请求信息
+        request_info = {
+            "path": request_path,
+            "method": request.method,
+            "headers": dict(request.headers),
+            "body": request_body if isinstance(request_body, dict) else {}
+        }
+        
+        # 路由匹配
+        route_match = route_matcher.find_matching_route(request_info, route_dicts)
+        
+        if not route_match:
+            # 记录未匹配的审计日志
+            await audit_service.log_request_start({
+                "request_id": request_id,
+                "api_key": api_key_info.key_value,
+                "path": request_path,
+                "method": request.method,
+                "ip_address": client_ip,
+                "request_time": datetime.fromtimestamp(start_time),
+                "user_agent": request.headers.get("user-agent", ""),
+                "request_headers": dict(request.headers),
+                "request_body": request_body if isinstance(request_body, dict) else None
+            })
+            
+            await audit_service.log_request_complete(request_id, {
+                "status_code": 404,
+                "response_time": datetime.now(),
+                "error_message": "No matching route found"
+            })
+            
+            raise HTTPException(
+                status_code=404,
+                detail="No matching route configuration found"
+            )
+        
+        # 构建目标URL
+        target_url = proxy_engine.build_target_url(route_match, request_path)
+        
+        # 代理请求执行
+        response = await proxy_engine.forward_request(
+            route_config=route_match,
+            method=request.method,
+            url=target_url,
+            headers=dict(request.headers),
+            json=request_body if isinstance(request_body, dict) else None,
+            content=request_body if isinstance(request_body, bytes) else None
         )
         
-        # 使用httpx转发请求到云天代理
-        import httpx
-        response = None
-        try:
-            async with httpx.AsyncClient(
-                timeout=httpx.Timeout(
-                    timeout=route_result.endpoint_config.timeout,
-                    read=route_result.endpoint_config.timeout * 2
-                )
-            ) as client:
-                
-                # 转发请求
-                response = await client.post(
-                    route_result.target_url,
-                    json=route_result.enhanced_body,
-                    headers=route_result.enhanced_headers
-                )
-        except httpx.TimeoutException as timeout_exc:
-            # 处理超时异常
-            end_time = time.time()
-            response_time_ms = int((end_time - start_time) * 1000)
+        # 计算总响应时间
+        end_time = time.time()
+        total_response_time = int((end_time - start_time) * 1000)
+        
+        # 检查是否为流式响应
+        is_stream = proxy_engine.is_stream_response(response)
+        
+        # 记录请求开始
+        await audit_service.log_request_start({
+            "request_id": request_id,
+            "api_key": api_key_info.key_value,
+            "path": request_path,
+            "method": request.method,
+            "ip_address": client_ip,
+            "target_url": target_url,
+            "request_time": datetime.fromtimestamp(start_time),
+            "user_agent": request.headers.get("user-agent", ""),
+            "request_headers": dict(request.headers),
+            "request_body": request_body if isinstance(request_body, dict) else None,
+            "request_size": len(str(request_body)) if request_body else 0
+        })
+        
+        # 记录请求完成
+        response_content = None if is_stream else await response.aread()
+        await audit_service.log_request_complete(request_id, {
+            "status_code": response.status_code,
+            "response_time": datetime.now(),
+            "is_stream": is_stream,
+            "response_headers": dict(response.headers),
+            "response_body": response_content,
+            "response_size": len(response_content) if response_content else 0
+        })
+        
+        # 返回响应
+        if is_stream:
+            return await proxy_engine.handle_stream_response(response)
+        else:
+            # 处理响应头
+            processed_headers = proxy_engine._process_response_headers(dict(response.headers))
             
-            audit_service = AuditService(db)
-            await audit_service.create_enhanced_log(
-                request=request,
-                request_id=request_id,
-                api_key=api_key_info.key_value,
-                source_path=source_path or api_key_info.source_path,
-                target_url=route_result.target_url,
-                status_code=504,  # Gateway Timeout
-                response_time_ms=response_time_ms,
-                error_message=f"Request timeout: {str(timeout_exc)}",
-                model_name=route_result.endpoint_config.model_name,
-                routing_time_ms=0
-            )
-            
-            raise HTTPException(
-                status_code=status.HTTP_504_GATEWAY_TIMEOUT,
-                detail=f"Request to model service timed out after {route_result.endpoint_config.timeout}s"
-            )
-        except httpx.ConnectError as connect_exc:
-            # 处理连接异常
-            end_time = time.time()
-            response_time_ms = int((end_time - start_time) * 1000)
-            
-            audit_service = AuditService(db)
-            await audit_service.create_enhanced_log(
-                request=request,
-                request_id=request_id,
-                api_key=api_key_info.key_value,
-                source_path=source_path or api_key_info.source_path,
-                target_url=route_result.target_url,
-                status_code=502,  # Bad Gateway
-                response_time_ms=response_time_ms,
-                error_message=f"Connection failed: {str(connect_exc)}",
-                model_name=route_result.endpoint_config.model_name,
-                routing_time_ms=0
-            )
-            
-            raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY,
-                detail="Failed to connect to model service"
-            )
-        except httpx.HTTPError as http_error:
-            # 处理其他HTTP错误
-            end_time = time.time()
-            response_time_ms = int((end_time - start_time) * 1000)
-            
-            audit_service = AuditService(db)
-            await audit_service.create_enhanced_log(
-                request=request,
-                request_id=request_id,
-                api_key=api_key_info.key_value,
-                source_path=source_path or api_key_info.source_path,
-                target_url=route_result.target_url,
-                status_code=503,  # Service Unavailable
-                response_time_ms=response_time_ms,
-                error_message=f"HTTP error: {str(http_error)}",
-                model_name=route_result.endpoint_config.model_name,
-                routing_time_ms=0
-            )
-            
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="Model service error"
-            )
-            
-            end_time = time.time()
-            response_time_ms = int((end_time - start_time) * 1000)
-            
-            # 处理流式响应
-            if response.headers.get("content-type", "").startswith("text/event-stream"):
-                async def stream_wrapper():
-                    async for chunk in response.aiter_bytes():
-                        yield chunk
-                
-                # 记录流式响应的审计日志
-                audit_service = AuditService(db)
-                await audit_service.create_enhanced_log(
-                    request=request,
-                    request_id=request_id,
-                    api_key=api_key_info.key_value,
-                    source_path=source_path or api_key_info.source_path,
-                    target_url=route_result.target_url,
-                    status_code=response.status_code,
-                    response_time_ms=response_time_ms,
-                    request_body=route_result.enhanced_body,
-                    response_headers=dict(response.headers),
-                    is_stream=True,
-                    model_name=route_result.endpoint_config.model_name,
-                    routing_time_ms=getattr(route_result, 'routing_time_ms', 0)
-                )
-                
-                return StreamingResponse(
-                    stream_wrapper(),
-                    status_code=response.status_code,
-                    headers=dict(response.headers),
-                    media_type="text/event-stream"
-                )
-            
-            # 非流式响应
-            response_content = await response.aread()
-            
-            # 记录审计日志
-            audit_service = AuditService(db)
-            await audit_service.create_enhanced_log(
-                request=request,
-                request_id=request_id,
-                api_key=api_key_info.key_value,
-                source_path=source_path or api_key_info.source_path,
-                target_url=route_result.target_url,
-                status_code=response.status_code,
-                response_time_ms=response_time_ms,
-                request_body=route_result.enhanced_body,
-                response_content=response_content,
-                response_headers=dict(response.headers),
-                model_name=route_result.endpoint_config.model_name,
-                routing_time_ms=getattr(route_result, 'routing_time_ms', 0)
-            )
-            
-            # 构建响应
-            final_response = Response(
+            return Response(
                 content=response_content,
                 status_code=response.status_code,
+                headers=processed_headers,
                 media_type=response.headers.get("content-type", "application/json")
             )
             
-            # 复制响应头
-            excluded_headers = {
-                "content-length", "content-encoding", "transfer-encoding", 
-                "connection", "upgrade", "server"
-            }
-            for key, value in response.headers.items():
-                if key.lower() not in excluded_headers:
-                    final_response.headers[key] = value
-            
-            return final_response
-            
-    except HTTPException as http_exc:
-        # 记录HTTP错误的审计日志
-        end_time = time.time()
-        response_time_ms = int((end_time - start_time) * 1000)
+    except HTTPException:
+        # 重新抛出HTTP异常
+        raise
         
-        audit_service = AuditService(db)
-        await audit_service.create_enhanced_log(
-            request=request,
-            request_id=request_id,
-            api_key=api_key_info.key_value,
-            source_path=source_path or api_key_info.source_path,
-            target_url=getattr(route_result, 'target_url', None) if route_result else None,
-            status_code=http_exc.status_code,
-            response_time_ms=response_time_ms,
-            error_message=http_exc.detail,
-            model_name=model_name,
-            routing_time_ms=0
-        )
-        
-        raise http_exc
     except Exception as e:
-        # 记录其他错误的审计日志
+        # 记录错误的审计日志
         end_time = time.time()
-        response_time_ms = int((end_time - start_time) * 1000)
         
-        audit_service = AuditService(db)
-        await audit_service.create_enhanced_log(
-            request=request,
-            request_id=request_id,
-            api_key=api_key_info.key_value,
-            source_path=source_path or api_key_info.source_path,
-            target_url=getattr(route_result, 'target_url', None) if route_result else None,
+        await audit_service.log_request_start({
+            "request_id": request_id,
+            "api_key": api_key_info.key_value,
+            "path": request_path,
+            "method": request.method,
+            "ip_address": client_ip,
+            "request_time": datetime.fromtimestamp(start_time),
+            "user_agent": request.headers.get("user-agent", ""),
+            "request_headers": dict(request.headers),
+            "request_body": request_body if isinstance(request_body, dict) else None
+        })
+        
+        await audit_service.log_request_complete(request_id, {
+            "status_code": 500,
+            "response_time": datetime.fromtimestamp(end_time),
+            "error_message": str(e)
+        })
+        
+        raise HTTPException(
             status_code=500,
-            response_time_ms=response_time_ms,
-            error_message=str(e),
-            model_name=model_name,
-            routing_time_ms=0
-        )
-        
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Smart routing failed: {str(e)}"
-        )
-
-
-@router.api_route("/proxy/{target_url:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"])
-async def proxy_dynamic_request(
-    target_url: str,
-    request: Request,
-    db: Session = Depends(get_db),
-    api_key_info: APIKeyResponse = Depends(api_key_auth)
-):
-    """
-    动态代理转发接口
-    支持 /proxy/{target_url} 格式的动态转发
-    
-    示例: POST /proxy/http://172.16.99.32:1030/miniai/v2/chat/completions
-    """
-    start_time = time.time()
-    request_id = generate_request_id()
-    
-    # 获取请求元信息
-    source_path = get_source_path(request)
-    client_ip = get_client_ip(request)
-    user_agent = get_user_agent(request)
-    request_path = f"/proxy/{target_url}"
-    
-    # 创建动态路由管理器
-    dynamic_route_manager = DynamicRouteManager(db)
-    
-    try:
-        # 执行动态代理转发
-        proxy_result = await dynamic_route_manager.proxy_dynamic_request(
-            target_url, request, request_id
-        )
-        
-        # 处理流式响应
-        if proxy_result.get("is_stream"):
-            async def stream_wrapper():
-                async for item in proxy_result["stream_generator"]:
-                    if item["type"] == "chunk":
-                        yield item["data"]
-            
-            return StreamingResponse(
-                stream_wrapper(),
-                media_type="text/event-stream",
-                headers={
-                    "Cache-Control": "no-cache",
-                    "Connection": "keep-alive",
-                    "Access-Control-Allow-Origin": "*"
-                }
-            )
-        
-        # 记录审计日志
-        audit_service = AuditService(db)
-        await audit_service.create_enhanced_log(
-            request=request,
-            request_id=request_id,
-            api_key=api_key_info.key_value,
-            source_path=source_path or api_key_info.source_path,
-            target_url=proxy_result["target_url"],
-            status_code=proxy_result["status_code"],
-            response_time_ms=proxy_result["response_time_ms"],
-            response_content=proxy_result["content"],
-            response_headers=proxy_result["headers"]
-        )
-        
-        # 构建响应
-        response = Response(
-            content=proxy_result["content"],
-            status_code=proxy_result["status_code"],
-            media_type=proxy_result["headers"].get("content-type", "application/octet-stream")
-        )
-        
-        # 复制响应头
-        excluded_headers = {
-            "content-length", "content-encoding", "transfer-encoding", 
-            "connection", "upgrade", "server"
-        }
-        for key, value in proxy_result["headers"].items():
-            if key.lower() not in excluded_headers:
-                response.headers[key] = value
-        
-        return response
-        
-    except HTTPException as e:
-        # 记录失败的审计日志
-        end_time = time.time()
-        response_time_ms = int((end_time - start_time) * 1000)
-        
-        audit_service = AuditService(db)
-        await audit_service.create_enhanced_log(
-            request=request,
-            request_id=request_id,
-            api_key=api_key_info.key_value,
-            source_path=source_path or api_key_info.source_path,
-            target_url=proxy_result["target_url"],
-            status_code=proxy_result["status_code"],
-            response_time_ms=proxy_result["response_time_ms"],
-            response_content=proxy_result["content"],
-            response_headers=proxy_result["headers"]
-        )
-        
-        raise e
-    
-    finally:
-        # 关闭动态路由管理器
-        await dynamic_route_manager.close()
-
-
-@router.api_route("/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"])
-async def proxy_request(
-    path: str,
-    request: Request,
-    db: Session = Depends(get_db),
-    api_key_info: APIKeyResponse = Depends(api_key_auth)
-):
-    """
-    通用代理转发接口
-    
-    Args:
-        path: 请求路径
-        request: FastAPI请求对象
-        db: 数据库会话
-        api_key_info: API Key信息
-        
-    Returns:
-        Response: 代理响应
-    """
-    start_time = time.time()
-    request_id = generate_request_id()
-    
-    # 获取请求元信息
-    source_path = get_source_path(request)
-    client_ip = get_client_ip(request)
-    user_agent = get_user_agent(request)
-    request_path = f"/{path}" if path else "/"
-    
-    # 查找匹配的路由
-    route = await route_manager.find_route(request_path)
-    if not route:
-        # 记录404错误的审计日志
-        audit_service = AuditService(db)
-        await audit_service.create_enhanced_log(
-            request=request,
-            request_id=request_id,
-            api_key=api_key_info.key_value if api_key_info else None,
-            source_path=source_path or (api_key_info.source_path if api_key_info else None),
-            target_url=None,  # 或者None，根据具体情况
-            status_code=404,  # 或其他错误码
-            response_time_ms=int((time.time() - start_time) * 1000),
-            error_message="No matching route found"  # 或其他错误信息
-        )
-        
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="No matching route found"
-        )
-    
-    # 检查认证要求
-    if route.auth_required and not api_key_info:
-        # 记录401错误的审计日志
-        audit_service = AuditService(db)
-        await audit_service.create_enhanced_log(
-            request=request,
-            request_id=request_id,
-            api_key=api_key_info.key_value if api_key_info else None,
-            source_path=source_path or (api_key_info.source_path if api_key_info else None),
-            target_url=None,  # 或者None，根据具体情况
-            status_code=401,  # 或其他错误码
-            response_time_ms=int((time.time() - start_time) * 1000),
-            error_message="Authentication required for this route"  # 或其他错误信息
-        )
-        
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Authentication required for this route"
-        )
-    
-    try:
-        # 执行代理转发
-        proxy_result = await route_manager.proxy_request(request, route, request_id)
-        
-        # 记录成功的审计日志
-        audit_service = AuditService(db)
-        await audit_service.create_enhanced_log(
-            request=request,
-            request_id=request_id,
-            api_key=api_key_info.key_value,
-            source_path=source_path or api_key_info.source_path,
-            target_url=proxy_result["target_url"],
-            status_code=proxy_result["status_code"],
-            response_time_ms=proxy_result["response_time_ms"],
-            response_content=proxy_result["content"],
-            response_headers=proxy_result["headers"]
-        )
-        
-        # 构建响应
-        response = Response(
-            content=proxy_result["content"],
-            status_code=proxy_result["status_code"],
-            media_type=proxy_result["headers"].get("content-type", "application/octet-stream")
-        )
-        
-        # 复制响应头（排除某些系统头）
-        excluded_headers = {
-            "content-length", "content-encoding", "transfer-encoding", 
-            "connection", "upgrade", "server"
-        }
-        for key, value in proxy_result["headers"].items():
-            if key.lower() not in excluded_headers:
-                response.headers[key] = value
-        
-        return response
-        
-    except HTTPException as e:
-        # 记录失败的审计日志
-        end_time = time.time()
-        response_time_ms = int((end_time - start_time) * 1000)
-        
-        audit_service = AuditService(db)
-        await audit_service.create_enhanced_log(
-            request=request,
-            request_id=request_id,
-            api_key=api_key_info.key_value,
-            source_path=source_path or api_key_info.source_path,
-            target_url=proxy_result.get("target_url") if "proxy_result" in locals() else None,
-            status_code=e.status_code,
-            response_time_ms=response_time_ms,
-            error_message=e.detail
-        )
-        
-        raise e
-    
-    except Exception as e:
-        # 记录未知错误的审计日志
-        audit_service = AuditService(db)
-        await audit_service.create_enhanced_log(
-            request=request,
-            request_id=request_id,
-            api_key=api_key_info.key_value if api_key_info else None,
-            source_path=source_path or (api_key_info.source_path if api_key_info else None),
-            target_url=None,  # 或者None，根据具体情况
-            status_code=500,  # 或其他错误码
-            response_time_ms=int((time.time() - start_time) * 1000),
-            error_message=str(e)  # 或其他错误信息
-        )
-        
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Internal server error"
+            detail="Internal proxy error"
         ) 

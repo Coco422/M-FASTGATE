@@ -1,5 +1,5 @@
 """
-M-FastGate FastAPI 应用入口
+M-FastGate v0.2.0 FastAPI 应用入口
 """
 
 from datetime import datetime
@@ -8,10 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from .config import settings
 from .database import create_tables
-from .api import admin, proxy, gateway, ui, model_routes
-from .services.route_manager import route_manager
-from .services.api_gateway_service import api_gateway_service
-from . import __version__
+from .api import admin, proxy, ui
 from .core.logging_config import setup_logging, get_logger
 
 # Get a logger instance for this module
@@ -24,30 +21,28 @@ async def lifespan(app: FastAPI):
     setup_logging()
 
     # 启动时执行
-    logger.info(f"🚀 Starting {settings.app.name} v{settings.app.version}")
+    logger.info(f"🚀 Starting {settings.app['name']} v{settings.app['version']}")
     
     # 创建数据库表
     create_tables()
     logger.info("📊 Database tables created")
     
-    # 初始化API网关服务
-    logger.info("🌐 API Gateway service initialized")
+    # 初始化代理引擎服务
+    logger.info("🌐 Proxy engine initialized")
     
     yield
     
     # 关闭时执行
     logger.info("🔄 Shutting down...")
-    await route_manager.close()
-    await api_gateway_service.close()
     logger.info("✅ Cleanup completed")
 
 
 # 创建FastAPI应用
 app = FastAPI(
-    title=settings.app.name,
-    version=settings.app.version,
+    title=settings.app["name"],
+    version=settings.app["version"],
     description="一个基于FastAPI的轻量级网关系统",
-    debug=settings.app.debug,
+    debug=settings.app["debug"],
     lifespan=lifespan
 )
 
@@ -62,9 +57,7 @@ app.add_middleware(
 
 # 注册路由
 app.include_router(admin.router, prefix="/admin", tags=["管理接口"])
-app.include_router(ui.router, prefix="/admin/ui", tags=["Web管理界面"])  # 新增Web UI路由
-app.include_router(gateway.router, tags=["API网关"])  # 新增API网关路由
-app.include_router(model_routes.router, prefix="/admin", tags=["模型路由管理"])  # Phase 2.4: 模型路由管理
+app.include_router(ui.router, prefix="/admin/ui", tags=["Web管理界面"])
 
 # 健康检查接口
 @app.get("/health")
@@ -73,12 +66,13 @@ async def health_check():
     return {
         "status": "healthy",
         "timestamp": datetime.utcnow(),
-        "version": settings.app.version,
-        "name": settings.app.name,
-        "gateway": {
-            "backend_url": settings.api_gateway.backend_url,
-            "backend_path": settings.api_gateway.backend_path,
-            "async_audit": settings.api_gateway.async_audit
+        "version": settings.app["version"],
+        "name": settings.app["name"],
+        "proxy": {
+            "timeout": settings.proxy["timeout"],
+            "max_retries": settings.proxy["max_retries"],
+            "enable_streaming": settings.proxy["enable_streaming"],
+            "async_audit": settings.proxy["async_audit"]
         }
     }
 
@@ -87,17 +81,18 @@ async def health_check():
 async def root():
     """根路径信息"""
     return {
-        "name": settings.app.name,
-        "version": settings.app.version,
-        "description": "M-FastGate 网关系统",
+        "name": settings.app["name"],
+        "version": settings.app["version"],
+        "description": "M-FastGate v0.2.0 通用代理网关",
         "docs_url": "/docs",
         "health_url": "/health",
         "admin_prefix": "/admin",
         "web_ui_url": "/admin/ui",
-        "gateway_endpoints": {
-            "chat_completions": "/proxy/miniai/v2/chat/completions",
-            "smart_routing": "/smart/v1/chat/completions",
-            "model_management": "/admin/model-routes"
+        "proxy_endpoints": {
+            "universal_proxy": "/{path:path}",
+            "route_management": "/admin/routes",
+            "audit_logs": "/admin/logs",
+            "metrics": "/admin/metrics"
         }
     }
 
@@ -110,8 +105,8 @@ if __name__ == "__main__":
     
     uvicorn.run(
         "app.main:app",
-        host=settings.app.host,
-        port=settings.app.port,
-        reload=settings.app.debug,
+        host=settings.app["host"],
+        port=settings.app["port"],
+        reload=settings.app["debug"],
         log_level="info"
     )

@@ -1,5 +1,5 @@
 """
-管理接口
+M-FastGate v0.2.0 管理接口
 """
 
 from datetime import datetime
@@ -10,9 +10,8 @@ from ..database import get_db
 from ..middleware.auth import verify_admin_token
 from ..services.key_manager import KeyManager
 from ..services.audit_service import AuditService
-from ..services.dynamic_route_manager import DynamicRouteManager
 from ..models.api_key import APIKeyCreate, APIKeyUpdate, APIKeyResponse
-from ..models.route_config import RouteConfigCreate, RouteConfigUpdate, RouteConfigResponse
+from ..models.proxy_route import ProxyRouteCreate, ProxyRouteUpdate, ProxyRouteResponse
 from ..models.audit_log import AuditLogResponse
 from ..config import settings
 
@@ -108,89 +107,123 @@ async def delete_api_key(
     return {"message": "API Key deleted successfully"}
 
 
-# ============= 动态路由管理 =============
+# ============= 代理路由管理 =============
 
 @router.post("/routes")
-async def create_route(
-    route_data: RouteConfigCreate,
+async def create_proxy_route(
+    route_data: ProxyRouteCreate,
     db: Session = Depends(get_db),
     token: str = Depends(verify_admin_token)
-) -> RouteConfigResponse:
+) -> ProxyRouteResponse:
     """
-    创建新的路由配置
+    创建新的代理路由配置
     """
-    route_manager = DynamicRouteManager(db)
-    return route_manager.create_route(route_data)
+    from ..models.proxy_route import ProxyRoute
+    
+    # 创建代理路由
+    db_route = ProxyRoute(**route_data.dict())
+    db.add(db_route)
+    db.commit()
+    db.refresh(db_route)
+    
+    return ProxyRouteResponse.from_orm(db_route)
 
 
 @router.get("/routes")
-async def list_routes(
+async def list_proxy_routes(
+    skip: int = Query(0, ge=0, description="跳过的记录数"),
+    limit: int = Query(100, ge=1, le=1000, description="返回的记录数"),
+    is_active: Optional[bool] = Query(None, description="按活跃状态过滤"),
     db: Session = Depends(get_db),
     token: str = Depends(verify_admin_token)
-) -> List[RouteConfigResponse]:
+) -> List[ProxyRouteResponse]:
     """
-    获取所有路由配置
+    获取代理路由配置列表
     """
-    route_manager = DynamicRouteManager(db)
-    return route_manager.get_routes()
+    from ..models.proxy_route import ProxyRoute
+    
+    query = db.query(ProxyRoute)
+    
+    if is_active is not None:
+        query = query.filter(ProxyRoute.is_active == is_active)
+    
+    routes = query.offset(skip).limit(limit).all()
+    return [ProxyRouteResponse.from_orm(route) for route in routes]
 
 
 @router.get("/routes/{route_id}")
-async def get_route(
+async def get_proxy_route(
     route_id: str,
     db: Session = Depends(get_db),
     token: str = Depends(verify_admin_token)
-) -> RouteConfigResponse:
+) -> ProxyRouteResponse:
     """
-    获取单个路由配置详情
+    获取单个代理路由配置详情
     """
-    route_manager = DynamicRouteManager(db)
-    route = route_manager.get_route(route_id)
+    from ..models.proxy_route import ProxyRoute
+    
+    route = db.query(ProxyRoute).filter(ProxyRoute.id == route_id).first()
     if not route:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Route not found"
+            detail="Proxy route not found"
         )
-    return route
+    return ProxyRouteResponse.from_orm(route)
 
 
 @router.put("/routes/{route_id}")
-async def update_route(
+async def update_proxy_route(
     route_id: str,
-    route_data: RouteConfigUpdate,
+    route_data: ProxyRouteUpdate,
     db: Session = Depends(get_db),
     token: str = Depends(verify_admin_token)
-) -> RouteConfigResponse:
+) -> ProxyRouteResponse:
     """
-    更新路由配置
+    更新代理路由配置
     """
-    route_manager = DynamicRouteManager(db)
-    route = route_manager.update_route(route_id, route_data)
+    from ..models.proxy_route import ProxyRoute
+    
+    route = db.query(ProxyRoute).filter(ProxyRoute.id == route_id).first()
     if not route:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Route not found"
+            detail="Proxy route not found"
         )
-    return route
+    
+    # 更新字段
+    update_data = route_data.dict(exclude_unset=True)
+    for field, value in update_data.items():
+        setattr(route, field, value)
+    
+    route.updated_at = datetime.utcnow()
+    db.commit()
+    db.refresh(route)
+    
+    return ProxyRouteResponse.from_orm(route)
 
 
 @router.delete("/routes/{route_id}")
-async def delete_route(
+async def delete_proxy_route(
     route_id: str,
     db: Session = Depends(get_db),
     token: str = Depends(verify_admin_token)
 ):
     """
-    删除路由配置
+    删除代理路由配置
     """
-    route_manager = DynamicRouteManager(db)
-    success = route_manager.delete_route(route_id)
-    if not success:
+    from ..models.proxy_route import ProxyRoute
+    
+    route = db.query(ProxyRoute).filter(ProxyRoute.id == route_id).first()
+    if not route:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Route not found"
+            detail="Proxy route not found"
         )
-    return {"message": "Route deleted successfully"}
+    
+    db.delete(route)
+    db.commit()
+    
+    return {"message": "Proxy route deleted successfully"}
 
 
 # ============= 审计日志 =============
@@ -257,25 +290,4 @@ async def get_trends_metrics(
     audit_service = AuditService(db)
     return audit_service.get_trends_data(days, group_by)
 
-# ============= 原有的路由配置兼容 =============
-
-@router.get("/routes-legacy")
-async def get_routes_legacy(
-    token: str = Depends(verify_admin_token)
-):
-    """
-    获取路由配置（兼容原有接口）
-    """
-    from ..config import routes_config
-    return {
-        "routes": [
-            {
-                "name": route.name,
-                "path_prefix": route.path_prefix,
-                "targets": [{"url": target.url, "timeout": target.timeout} for target in route.targets],
-                "auth_required": route.auth_required,
-                "rate_limit": route.rate_limit
-            }
-            for route in routes_config
-        ]
-    } 
+ 
