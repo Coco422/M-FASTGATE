@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from .config import settings
 from .database import create_tables
-from .api import admin, proxy, gateway, ui
+from .api import admin, proxy, gateway, ui, model_routes
 from .services.route_manager import route_manager
 from .services.api_gateway_service import api_gateway_service
 from . import __version__
@@ -64,6 +64,7 @@ app.add_middleware(
 app.include_router(admin.router, prefix="/admin", tags=["管理接口"])
 app.include_router(ui.router, prefix="/admin/ui", tags=["Web管理界面"])  # 新增Web UI路由
 app.include_router(gateway.router, tags=["API网关"])  # 新增API网关路由
+app.include_router(model_routes.router, prefix="/admin", tags=["模型路由管理"])  # Phase 2.4: 模型路由管理
 
 # 健康检查接口
 @app.get("/health")
@@ -94,7 +95,9 @@ async def root():
         "admin_prefix": "/admin",
         "web_ui_url": "/admin/ui",
         "gateway_endpoints": {
-            "chat_completions": "/proxy/miniai/v2/chat/completions"
+            "chat_completions": "/proxy/miniai/v2/chat/completions",
+            "smart_routing": "/smart/v1/chat/completions",
+            "model_management": "/admin/model-routes"
         }
     }
 

@@ -35,6 +35,21 @@ class RateLimitingConfig(BaseSettings):
     default_requests_per_minute: int = 100
 
 
+class CloudProxyConfig(BaseSettings):
+    """云天代理服务配置"""
+    host: str = "10.101.32.14"
+    port: int = 34094
+    base_path: str = "/openapi/proxy"
+
+
+class ModelRoutingConfig(BaseSettings):
+    """模型路由配置"""
+    enabled: bool = True
+    app_key: str = "your_model_app_key_here"
+    system_source: str = "智能客服系统"
+    config_path: str = "config/model_routes.yaml"
+
+
 class APIGatewayConfig(BaseSettings):
     """API网关专门配置"""
     # 后端服务配置
@@ -96,6 +111,8 @@ class Settings(BaseSettings):
     security: SecurityConfig = SecurityConfig()
     rate_limiting: RateLimitingConfig = RateLimitingConfig()
     api_gateway: APIGatewayConfig = APIGatewayConfig()
+    cloud_proxy: CloudProxyConfig = CloudProxyConfig()
+    model_routing: ModelRoutingConfig = ModelRoutingConfig()
     
     model_config = {
         "env_file": ".env",
@@ -140,6 +157,10 @@ def load_config(config_file: str = None) -> Settings:
             settings.rate_limiting = RateLimitingConfig(**config_data['rate_limiting'])
         if 'api_gateway' in config_data:
             settings.api_gateway = APIGatewayConfig(**config_data['api_gateway'])
+        if 'cloud_proxy' in config_data:
+            settings.cloud_proxy = CloudProxyConfig(**config_data['cloud_proxy'])
+        if 'model_routing' in config_data:
+            settings.model_routing = ModelRoutingConfig(**config_data['model_routing'])
         
         return settings
     else:

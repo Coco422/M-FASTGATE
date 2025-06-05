@@ -42,6 +42,10 @@ class AuditLogDB(Base):
     response_headers = Column(Text, nullable=True)
     response_body = Column(Text, nullable=True)
     
+    # Phase 2.4: 模型路由相关字段
+    model_name = Column(String(100), nullable=True, index=True)
+    routing_time_ms = Column(Integer, default=0)
+    
     created_at = Column(DateTime, default=get_china_time, index=True)
 
 
@@ -70,6 +74,10 @@ class AuditLogCreate(BaseModel):
     request_body: Optional[str] = None
     response_headers: Optional[str] = None
     response_body: Optional[str] = None
+    
+    # Phase 2.4: 模型路由相关字段
+    model_name: Optional[str] = None
+    routing_time_ms: int = 0
 
 
 class AuditLogResponse(BaseModel):
@@ -98,6 +106,10 @@ class AuditLogResponse(BaseModel):
     request_body: Optional[str]
     response_headers: Optional[str] 
     response_body: Optional[str]
+    
+    # Phase 2.4: 模型路由相关字段
+    model_name: Optional[str] = None
+    routing_time_ms: int = 0
     
     created_at: datetime
     

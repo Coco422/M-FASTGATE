@@ -464,7 +464,10 @@ class AuditService:
         response_headers: Optional[Dict[str, str]] = None,
         error_message: Optional[str] = None,
         is_stream: bool = False,
-        stream_chunks: int = 0
+        stream_chunks: int = 0,
+        model_name: Optional[str] = None,
+        routing_time_ms: int = 0,
+        request_body: Optional[dict] = None
     ) -> AuditLogResponse:
         """
         创建增强的审计日志，包含完整的请求和响应信息
@@ -495,9 +498,12 @@ class AuditService:
             is_stream=is_stream,
             stream_chunks=stream_chunks,
             request_headers=request_info.get("request_headers"),
-            request_body=request_info.get("request_body"),
+            request_body=request_body if request_body else request_info.get("request_body"),
             response_headers=response_info.get("response_headers"),
-            response_body=response_info.get("response_body")
+            response_body=response_info.get("response_body"),
+            # Phase 2.4: Add model routing information
+            model_name=model_name,
+            routing_time_ms=routing_time_ms
         )
         
         return self.create_log(log_data)
@@ -550,6 +556,9 @@ class AuditService:
             request_headers=db_log.request_headers,
             request_body=db_log.request_body,
             response_headers=db_log.response_headers,
-            response_body=db_log.response_body
+            response_body=db_log.response_body,
+            # Phase 2.4: Handle new fields with defaults for backward compatibility
+            model_name=getattr(db_log, 'model_name', None),
+            routing_time_ms=getattr(db_log, 'routing_time_ms', 0)
         )
  
