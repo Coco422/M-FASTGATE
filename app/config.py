@@ -11,7 +11,7 @@ import yaml
 
 class DatabaseConfig(BaseSettings):
     """数据库配置"""
-    url: str = "sqlite:///./data/fastgate.db"
+    url: str = "sqlite:///./app/data/fastgate.db"
     echo: bool = True
 
 
