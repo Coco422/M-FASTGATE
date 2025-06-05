@@ -128,16 +128,10 @@
             <div class="modal-body">
                 <form id="createKeyForm">
                     <div class="mb-3">
-                        <label for="keyUser" class="form-label">用户标识 *</label>
-                        <input type="text" class="form-control" id="keyUser" required 
-                               placeholder="例如: user1, department-ai">
-                        <div class="form-text">用于标识这个Key的归属</div>
-                    </div>
-                    <div class="mb-3">
-                        <label for="keySourcePath" class="form-label">来源路径</label>
+                        <label for="keySourcePath" class="form-label">用户标识</label>
                         <input type="text" class="form-control" id="keySourcePath" 
-                               placeholder="例如: /api/v1/chat">
-                        <div class="form-text">限制此Key可访问的API路径</div>
+                               placeholder="例如: user1">
+                        <div class="form-text">用于标识这个Key的归属用户</div>
                     </div>
                     <div class="mb-3">
                         <label for="keyExpiry" class="form-label">过期时间</label>

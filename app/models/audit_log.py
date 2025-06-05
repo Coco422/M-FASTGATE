@@ -2,15 +2,17 @@
 审计日志数据模型
 """
 
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from typing import Optional
 from sqlalchemy import Column, String, DateTime, Integer, Text, Boolean
 from sqlalchemy.sql import func
 from pydantic import BaseModel
 from ..database import Base
 import uuid
-
-
+# 定义中国时区
+china_tz = timezone(timedelta(hours=8))
+def get_china_time():
+    return datetime.now(china_tz)
 class AuditLogDB(Base):
     """审计日志数据库模型"""
     __tablename__ = "audit_logs"
@@ -40,7 +42,7 @@ class AuditLogDB(Base):
     response_headers = Column(Text, nullable=True)
     response_body = Column(Text, nullable=True)
     
-    created_at = Column(DateTime, default=func.now(), index=True)
+    created_at = Column(DateTime, default=get_china_time, index=True)
 
 
 class AuditLogCreate(BaseModel):

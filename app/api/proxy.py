@@ -67,20 +67,17 @@ async def proxy_dynamic_request(
         
         # 记录审计日志
         audit_service = AuditService(db)
-        audit_service.create_log(AuditLogCreate(
+        await audit_service.create_enhanced_log(
+            request=request,
             request_id=request_id,
             api_key=api_key_info.key_value,
             source_path=source_path or api_key_info.source_path,
-            method=request.method,
-            path=request_path,
             target_url=proxy_result["target_url"],
             status_code=proxy_result["status_code"],
             response_time_ms=proxy_result["response_time_ms"],
-            request_size=proxy_result["request_size"],
-            response_size=proxy_result["response_size"],
-            user_agent=user_agent,
-            ip_address=client_ip
-        ))
+            response_content=proxy_result["content"],
+            response_headers=proxy_result["headers"]
+        )
         
         # 构建响应
         response = Response(
@@ -106,21 +103,17 @@ async def proxy_dynamic_request(
         response_time_ms = int((end_time - start_time) * 1000)
         
         audit_service = AuditService(db)
-        audit_service.create_log(AuditLogCreate(
+        await audit_service.create_enhanced_log(
+            request=request,
             request_id=request_id,
             api_key=api_key_info.key_value,
             source_path=source_path or api_key_info.source_path,
-            method=request.method,
-            path=request_path,
-            target_url=target_url,
-            status_code=e.status_code,
-            response_time_ms=response_time_ms,
-            request_size=0,
-            response_size=0,
-            user_agent=user_agent,
-            ip_address=client_ip,
-            error_message=e.detail
-        ))
+            target_url=proxy_result["target_url"],
+            status_code=proxy_result["status_code"],
+            response_time_ms=proxy_result["response_time_ms"],
+            response_content=proxy_result["content"],
+            response_headers=proxy_result["headers"]
+        )
         
         raise e
     
@@ -162,21 +155,16 @@ async def proxy_request(
     if not route:
         # 记录404错误的审计日志
         audit_service = AuditService(db)
-        audit_service.create_log(AuditLogCreate(
+        await audit_service.create_enhanced_log(
+            request=request,
             request_id=request_id,
-            api_key=api_key_info.key_value,
-            source_path=source_path or api_key_info.source_path,
-            method=request.method,
-            path=request_path,
-            target_url=None,
-            status_code=404,
+            api_key=api_key_info.key_value if api_key_info else None,
+            source_path=source_path or (api_key_info.source_path if api_key_info else None),
+            target_url=None,  # 或者None，根据具体情况
+            status_code=404,  # 或其他错误码
             response_time_ms=int((time.time() - start_time) * 1000),
-            request_size=0,
-            response_size=0,
-            user_agent=user_agent,
-            ip_address=client_ip,
-            error_message="No matching route found"
-        ))
+            error_message="No matching route found"  # 或其他错误信息
+        )
         
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -187,19 +175,16 @@ async def proxy_request(
     if route.auth_required and not api_key_info:
         # 记录401错误的审计日志
         audit_service = AuditService(db)
-        audit_service.create_log(AuditLogCreate(
+        await audit_service.create_enhanced_log(
+            request=request,
             request_id=request_id,
-            api_key=None,
-            source_path=source_path,
-            method=request.method,
-            path=request_path,
-            target_url=None,
-            status_code=401,
+            api_key=api_key_info.key_value if api_key_info else None,
+            source_path=source_path or (api_key_info.source_path if api_key_info else None),
+            target_url=None,  # 或者None，根据具体情况
+            status_code=401,  # 或其他错误码
             response_time_ms=int((time.time() - start_time) * 1000),
-            user_agent=user_agent,
-            ip_address=client_ip,
-            error_message="Authentication required"
-        ))
+            error_message="Authentication required for this route"  # 或其他错误信息
+        )
         
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -212,20 +197,17 @@ async def proxy_request(
         
         # 记录成功的审计日志
         audit_service = AuditService(db)
-        audit_service.create_log(AuditLogCreate(
+        await audit_service.create_enhanced_log(
+            request=request,
             request_id=request_id,
             api_key=api_key_info.key_value,
             source_path=source_path or api_key_info.source_path,
-            method=request.method,
-            path=request_path,
             target_url=proxy_result["target_url"],
             status_code=proxy_result["status_code"],
             response_time_ms=proxy_result["response_time_ms"],
-            request_size=proxy_result["request_size"],
-            response_size=proxy_result["response_size"],
-            user_agent=user_agent,
-            ip_address=client_ip
-        ))
+            response_content=proxy_result["content"],
+            response_headers=proxy_result["headers"]
+        )
         
         # 构建响应
         response = Response(
@@ -251,40 +233,32 @@ async def proxy_request(
         response_time_ms = int((end_time - start_time) * 1000)
         
         audit_service = AuditService(db)
-        audit_service.create_log(AuditLogCreate(
+        await audit_service.create_enhanced_log(
+            request=request,
             request_id=request_id,
             api_key=api_key_info.key_value,
             source_path=source_path or api_key_info.source_path,
-            method=request.method,
-            path=request_path,
             target_url=proxy_result.get("target_url") if "proxy_result" in locals() else None,
             status_code=e.status_code,
             response_time_ms=response_time_ms,
-            request_size=0,
-            response_size=0,
-            user_agent=user_agent,
-            ip_address=client_ip,
             error_message=e.detail
-        ))
+        )
         
         raise e
     
     except Exception as e:
         # 记录未知错误的审计日志
         audit_service = AuditService(db)
-        audit_service.create_log(AuditLogCreate(
+        await audit_service.create_enhanced_log(
+            request=request,
             request_id=request_id,
-            api_key=api_key_info.key_value,
-            source_path=source_path or api_key_info.source_path,
-            method=request.method,
-            path=request_path,
-            target_url=None,
-            status_code=500,
+            api_key=api_key_info.key_value if api_key_info else None,
+            source_path=source_path or (api_key_info.source_path if api_key_info else None),
+            target_url=None,  # 或者None，根据具体情况
+            status_code=500,  # 或其他错误码
             response_time_ms=int((time.time() - start_time) * 1000),
-            user_agent=user_agent,
-            ip_address=client_ip,
-            error_message=str(e)
-        ))
+            error_message=str(e)  # 或其他错误信息
+        )
         
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

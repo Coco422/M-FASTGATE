@@ -4,6 +4,7 @@
 
 class StatisticsManager {
     constructor() {
+        this.initialized = false; 
         this.filters = {
             timeRange: '30d',
             apiKey: '',
@@ -23,6 +24,13 @@ class StatisticsManager {
     }
     
     init() {
+        // 防止重复初始化
+        if (this.initialized) {
+            console.warn('StatisticsManager already initialized');
+            return;
+        }
+        
+        this.initialized = true;
         this.setupEventListeners();
         this.loadApiKeys();
         this.loadStatistics();
@@ -60,7 +68,7 @@ class StatisticsManager {
     
     async loadApiKeys() {
         try {
-            const response = await apiClient.get('/admin/keys?limit=1000');
+            const response = await apiClient.get('/keys?limit=1000');
             if (response.ok) {
                 const keys = await response.json();
                 this.populateApiKeyFilter(keys);
@@ -101,7 +109,7 @@ class StatisticsManager {
     async loadOverallStats() {
         try {
             // 获取当前时期统计
-            const currentResponse = await apiClient.get('/admin/metrics');
+            const currentResponse = await apiClient.get('/metrics');
             if (!currentResponse.ok) {
                 throw new Error('获取统计指标失败');
             }
@@ -142,7 +150,7 @@ class StatisticsManager {
     async generateTrendData() {
         try {
             // 尝试从后端获取真实趋势数据
-            const response = await apiClient.get(`/admin/metrics/trends?days=30&group_by=${this.filters.groupBy}`);
+            const response = await apiClient.get(`/metrics/trends?days=30&group_by=${this.filters.groupBy}`);
             
             if (response.ok) {
                 const trendsData = await response.json();
@@ -271,7 +279,7 @@ class StatisticsManager {
     async loadUsageChart() {
         try {
             // 获取API Key使用数据
-            const response = await apiClient.get('/admin/keys?limit=50');
+            const response = await apiClient.get('/keys?limit=50');
             if (!response.ok) return;
             
             const keys = await response.json();
@@ -473,7 +481,7 @@ class StatisticsManager {
     
     async loadKeyRanking() {
         try {
-            const response = await apiClient.get('/admin/keys?limit=100');
+            const response = await apiClient.get('/keys?limit=100');
             if (!response.ok) return;
             
             const keys = await response.json();
@@ -554,7 +562,7 @@ class StatisticsManager {
     
     async loadStatsTable() {
         try {
-            const response = await apiClient.get('/admin/keys?limit=1000');
+            const response = await apiClient.get('/keys?limit=1000');
             if (!response.ok) return;
             
             const keys = await response.json();

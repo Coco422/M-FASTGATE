@@ -65,7 +65,7 @@ class ApiKeysManager {
                 params.append('source_path', this.filters.source_path);
             }
             
-            const response = await apiClient.get(`/admin/keys?${params}`);
+            const response = await apiClient.get(`/keys?${params}`);
             
             if (response.ok) {
                 const keys = await response.json();
@@ -103,7 +103,7 @@ class ApiKeysManager {
                 <td>
                     <div class="d-flex align-items-center">
                         <i class="fas fa-user text-primary me-2"></i>
-                        <span class="fw-medium">${escapeHtml(key.user || 'N/A')}</span>
+                        <span class="fw-medium">${escapeHtml(key.source_path || 'N/A')}</span>
                     </div>
                 </td>
                 <td>
@@ -151,7 +151,7 @@ class ApiKeysManager {
                                 title="编辑">
                             <i class="fas fa-edit"></i>
                         </button>
-                        <button class="btn btn-outline-danger" onclick="apiKeysManager.deleteKey('${key.key_id}', '${escapeHtml(key.user || 'N/A')}')"
+                        <button class="btn btn-outline-danger" onclick="apiKeysManager.deleteKey('${key.key_id}', '${escapeHtml(key.source_path || 'N/A')}')"
                                 title="删除">
                             <i class="fas fa-trash"></i>
                         </button>
@@ -233,7 +233,6 @@ class ApiKeysManager {
     async createApiKey() {
         try {
             const keyData = {
-                user: $('#keyUser').val().trim(),
                 source_path: $('#keySourcePath').val().trim() || null,
                 description: $('#keyDescription').val().trim() || null
             };
@@ -244,12 +243,12 @@ class ApiKeysManager {
                 keyData.expires_at = new Date(expiry).toISOString();
             }
             
-            if (!keyData.user) {
+            if (!keyData.source_path) {
                 showAlert('请输入用户标识', 'warning');
                 return;
             }
             
-            const response = await apiClient.post('/admin/keys', keyData);
+            const response = await apiClient.post('/keys', keyData);
             
             if (response.ok) {
                 const result = await response.json();
@@ -275,7 +274,7 @@ class ApiKeysManager {
     
     async viewKey(keyId) {
         try {
-            const response = await apiClient.get(`/admin/keys/${keyId}`);
+            const response = await apiClient.get(`/keys/${keyId}`);
             
             if (response.ok) {
                 const key = await response.json();
@@ -302,7 +301,7 @@ class ApiKeysManager {
                         </tr>
                         <tr>
                             <th>用户标识:</th>
-                            <td>${escapeHtml(key.user || 'N/A')}</td>
+                            <td>${escapeHtml(key.source_path || 'N/A')}</td>
                         </tr>
                         <tr>
                             <th>状态:</th>
@@ -372,7 +371,7 @@ class ApiKeysManager {
     
     async editKey(keyId) {
         try {
-            const response = await apiClient.get(`/admin/keys/${keyId}`);
+            const response = await apiClient.get(`/keys/${keyId}`);
             
             if (response.ok) {
                 const key = await response.json();
@@ -389,7 +388,6 @@ class ApiKeysManager {
     
     showEditKeyModal(key) {
         $('#editKeyId').val(key.key_id);
-        $('#editKeyUser').val(key.user || '');
         $('#editKeySourcePath').val(key.source_path || '');
         $('#editKeyDescription').val(key.description || '');
         $('#editKeyActive').prop('checked', key.is_active);
@@ -408,7 +406,6 @@ class ApiKeysManager {
         try {
             const keyId = $('#editKeyId').val();
             const keyData = {
-                user: $('#editKeyUser').val().trim(),
                 source_path: $('#editKeySourcePath').val().trim() || null,
                 description: $('#editKeyDescription').val().trim() || null,
                 is_active: $('#editKeyActive').prop('checked')
@@ -425,7 +422,7 @@ class ApiKeysManager {
                 return;
             }
             
-            const response = await apiClient.put(`/admin/keys/${keyId}`, keyData);
+            const response = await apiClient.put(`/keys/${keyId}`, keyData);
             
             if (response.ok) {
                 showAlert('API Key更新成功！', 'success');
@@ -448,7 +445,7 @@ class ApiKeysManager {
         }
         
         try {
-            const response = await apiClient.delete(`/admin/keys/${keyId}`);
+            const response = await apiClient.delete(`/keys/${keyId}`);
             
             if (response.ok) {
                 showAlert('API Key删除成功！', 'success');

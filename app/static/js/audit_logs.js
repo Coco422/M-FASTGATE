@@ -67,7 +67,7 @@ class AuditLogsManager {
                 params.append('source_path', this.filters.source_path);
             }
             
-            const response = await apiClient.get(`/admin/logs?${params}`);
+            const response = await apiClient.get(`/logs?${params}`);
             
             if (response.ok) {
                 const logs = await response.json();
@@ -108,7 +108,7 @@ class AuditLogsManager {
                 <tr>
                     <td>
                         <small class="text-muted">
-                            ${formatDateTime(log.timestamp)}
+                            ${formatDateTime(log.created_at)}
                         </small>
                     </td>
                     <td>
@@ -280,7 +280,7 @@ class AuditLogsManager {
             // 获取大量数据用于统计
             params.append('limit', '1000');
             
-            const response = await apiClient.get(`/admin/logs?${params}`);
+            const response = await apiClient.get(`/logs?${params}`);
             
             if (response.ok) {
                 const logs = await response.json();
@@ -319,7 +319,7 @@ class AuditLogsManager {
                 limit: 1000
             });
             
-            const response = await apiClient.get(`/admin/logs?${params}`);
+            const response = await apiClient.get(`/logs?${params}`);
             
             if (response.ok) {
                 const logs = await response.json();
@@ -352,7 +352,7 @@ class AuditLogsManager {
                         </tr>
                         <tr>
                             <th>时间:</th>
-                            <td>${formatDateTime(log.timestamp)}</td>
+                            <td>${formatDateTime(log.created_at)}</td>
                         </tr>
                         <tr>
                             <th>API Key:</th>
@@ -471,7 +471,7 @@ class AuditLogsManager {
                 }
             });
             
-            const response = await apiClient.get(`/admin/logs?${params}`);
+            const response = await apiClient.get(`/logs?${params}`);
             
             if (response.ok) {
                 const logs = await response.json();
@@ -496,7 +496,7 @@ class AuditLogsManager {
         const csvContent = [
             headers.join(','),
             ...logs.map(log => [
-                formatDateTime(log.timestamp),
+                formatDateTime(log.created_at),
                 log.api_key || '',
                 log.method || '',
                 escapeCSV(log.path || ''),

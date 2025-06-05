@@ -9,11 +9,19 @@ from ..models.audit_log import (
     AuditLogDB, AuditLogCreate, AuditLogResponse,
     generate_log_id
 )
-
+from fastapi import Request
+import json
+from typing import Dict, Any
 
 class AuditService:
     """审计日志服务"""
-    
+    # 添加配置常量
+    MAX_BODY_SIZE = 100000  # 最大请求/响应体大小（字符）
+    MAX_HEADER_SIZE = 1000  # 最大请求/响应头大小（字符）
+    SENSITIVE_HEADERS = {
+        'authorization', 'x-api-key', 'cookie', 'set-cookie', 
+        'x-auth-token', 'x-access-token', 'proxy-authorization'
+    }
     def __init__(self, db: Session):
         self.db = db
     
@@ -333,6 +341,183 @@ class AuditService:
             "responseTime": response_time,
             "errorRate": error_rate
         }
+    
+    async def collect_request_info(self, request: Request) -> Dict[str, Any]:
+        """
+        收集完整的请求信息
+        
+        Args:
+            request: FastAPI请求对象
+            
+        Returns:
+            Dict: 包含请求头和请求体的字典
+        """
+        # 收集请求头
+        request_headers = dict(request.headers)
+        sanitized_headers = self._sanitize_headers(request_headers)
+        headers_json = json.dumps(sanitized_headers, ensure_ascii=False)
+        
+        # 截断过长的头信息
+        if len(headers_json) > self.MAX_HEADER_SIZE:
+            headers_json = headers_json[:self.MAX_HEADER_SIZE] + "...[TRUNCATED]"
+        
+        # 收集请求体
+        request_body = None
+        request_size = 0
+        try:
+            body_bytes = await request.body()
+            request_size = len(body_bytes) if body_bytes else 0
+            if body_bytes:
+                # 尝试解码为文本
+                try:
+                    body_text = body_bytes.decode('utf-8')
+                    # 截断过长的请求体
+                    if len(body_text) > self.MAX_BODY_SIZE:
+                        body_text = body_text[:self.MAX_BODY_SIZE] + "...[TRUNCATED]"
+                    request_body = body_text
+                except UnicodeDecodeError:
+                    # 如果不能解码为文本，记录为二进制数据
+                    request_body = f"[BINARY_DATA:{len(body_bytes)}_bytes]"
+        except Exception as e:
+            request_body = f"[ERROR_READING_BODY:{str(e)}]"
+        
+        return {
+            "request_headers": headers_json,
+            "request_body": request_body,
+            "request_size": request_size
+        }
+    
+    def collect_response_info(self, response_content: bytes, response_headers: Dict[str, str]) -> Dict[str, Any]:
+        """
+        收集完整的响应信息
+        
+        Args:
+            response_content: 响应内容
+            response_headers: 响应头
+            
+        Returns:
+            Dict: 包含响应头和响应体的字典
+        """
+        # 收集响应头
+        sanitized_headers = self._sanitize_headers(response_headers)
+        headers_json = json.dumps(sanitized_headers, ensure_ascii=False)
+        
+        # 截断过长的头信息
+        if len(headers_json) > self.MAX_HEADER_SIZE:
+            headers_json = headers_json[:self.MAX_HEADER_SIZE] + "...[TRUNCATED]"
+        
+        # 收集响应体
+        response_body = None
+        response_size = len(response_content) if response_content else 0
+        
+        if response_content:
+            try:
+                # 尝试解码为文本
+                body_text = response_content.decode('utf-8')
+                # 截断过长的响应体
+                if len(body_text) > self.MAX_BODY_SIZE:
+                    body_text = body_text[:self.MAX_BODY_SIZE] + "...[TRUNCATED]"
+                response_body = body_text
+            except UnicodeDecodeError:
+                # 如果不能解码为文本，记录为二进制数据
+                response_body = f"[BINARY_DATA:{response_size}_bytes]"
+        
+        return {
+            "response_headers": headers_json,
+            "response_body": response_body,
+            "response_size": response_size
+        }
+    
+    def _sanitize_headers(self, headers: Dict[str, str]) -> Dict[str, str]:
+        """
+        清理敏感的请求头信息
+        
+        Args:
+            headers: 原始请求头
+            
+        Returns:
+            Dict: 清理后的请求头
+        """
+        sanitized = {}
+        for key, value in headers.items():
+            key_lower = key.lower()
+            if key_lower in self.SENSITIVE_HEADERS:
+                # 对敏感信息进行脱敏处理
+                if len(value) > 10:
+                    sanitized[key] = value[:4] + "****" + value[-4:]
+                else:
+                    sanitized[key] = "****"
+            else:
+                sanitized[key] = value
+        return sanitized
+    
+    async def create_enhanced_log(
+        self, 
+        request: Request,
+        request_id: str,
+        api_key: Optional[str] = None,
+        source_path: Optional[str] = None,
+        target_url: Optional[str] = None,
+        status_code: int = 200,
+        response_time_ms: int = 0,
+        response_content: Optional[bytes] = None,
+        response_headers: Optional[Dict[str, str]] = None,
+        error_message: Optional[str] = None,
+        is_stream: bool = False,
+        stream_chunks: int = 0
+    ) -> AuditLogResponse:
+        """
+        创建增强的审计日志，包含完整的请求和响应信息
+        """
+        # 收集请求信息
+        request_info = await self.collect_request_info(request)
+        
+        # 收集响应信息
+        response_info = {"response_size": 0}
+        if response_content is not None and response_headers is not None:
+            response_info = self.collect_response_info(response_content, response_headers)
+        
+        # 构建审计日志数据
+        log_data = AuditLogCreate(
+            request_id=request_id,
+            api_key=api_key,
+            source_path=source_path,
+            method=request.method,
+            path=str(request.url.path),
+            target_url=target_url,
+            status_code=status_code,
+            response_time_ms=response_time_ms,
+            request_size=request_info.get("request_size", 0),
+            response_size=response_info.get("response_size", 0),
+            user_agent=request.headers.get("User-Agent"),
+            ip_address=self._get_client_ip(request),
+            error_message=error_message,
+            is_stream=is_stream,
+            stream_chunks=stream_chunks,
+            request_headers=request_info.get("request_headers"),
+            request_body=request_info.get("request_body"),
+            response_headers=response_info.get("response_headers"),
+            response_body=response_info.get("response_body")
+        )
+        
+        return self.create_log(log_data)
+    
+    def _get_client_ip(self, request: Request) -> str:
+        """获取客户端IP地址"""
+        # 优先从代理头获取真实IP
+        forwarded_for = request.headers.get("X-Forwarded-For")
+        if forwarded_for:
+            return forwarded_for.split(",")[0].strip()
+        
+        real_ip = request.headers.get("X-Real-IP")
+        if real_ip:
+            return real_ip
+        
+        # 回退到直接连接IP
+        if hasattr(request, "client") and request.client:
+            return request.client.host
+        
+        return "unknown"
     
     def _to_response(self, db_log: AuditLogDB) -> AuditLogResponse:
         """

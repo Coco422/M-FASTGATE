@@ -207,6 +207,9 @@ async def api_key_auth(
             detail="Invalid or expired API Key"
         )
     
+    # 更新使用统计
+    key_manager.update_usage(api_key)
+
     return api_key_info
 
 
