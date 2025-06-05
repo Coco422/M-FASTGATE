@@ -1,0 +1,54 @@
+# Git 相关
+.git
+.gitignore
+
+# Python 相关
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+.pytest_cache
+.coverage
+
+# 虚拟环境
+venv/
+env/
+ENV/
+
+# IDE 相关
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# 日志文件
+*.log
+logs/
+
+# 数据库文件
+*.db
+*.sqlite
+data/
+
+# 临时文件
+.tmp/
+tmp/
+
+# 文档
+README.md
+docs/
+
+# Docker 相关
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# 开发配置
+config/development.yaml
+
+# 其他
+.DS_Store
+Thumbs.db 

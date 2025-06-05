@@ -45,7 +45,7 @@ class CloudProxyConfig(BaseSettings):
 class ModelRoutingConfig(BaseSettings):
     """模型路由配置"""
     enabled: bool = True
-    app_key: str = "your_model_app_key_here"
+    app_key: str = "1_C2D6F4B1183D592E04BA216D71A84F17"
     system_source: str = "智能客服系统"
     config_path: str = "config/model_routes.yaml"
 

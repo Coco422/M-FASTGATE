@@ -1,0 +1,68 @@
+app:
+  name: "M-FastGate"
+  version: "0.0.1"
+  debug: false
+  host: "0.0.0.0"
+  port: 8514
+
+database:
+  url: "sqlite:///./data/fastgate.db"
+  echo: false
+
+logging:
+  level: "INFO"
+  format: "json"
+  file: "logs/fastgate.log"
+
+security:
+  admin_token: "admin_secret_token_prod"
+  key_prefix: "fg_"
+  default_expiry_days: 365
+
+rate_limiting:
+  enabled: true
+  default_requests_per_minute: 100
+
+# API网关配置
+api_gateway:
+  # 后端服务配置
+  backend_url: "http://172.16.99.204:3398"
+  backend_path: "/v1/chat/completions"
+  real_api_key: "your_production_api_key_here"
+  
+  # 请求配置
+  timeout: 30
+  max_retries: 3
+  
+  # 参数清洗配置
+  strip_headers:
+    - "host"
+    - "x-api-key"
+    - "authorization"
+    - "x-forwarded-for"
+    - "x-real-ip"
+    - "x-source-path"
+    - "user-agent"
+    - "content-length"
+  
+  strip_body_fields: []
+  
+  # 异步审计配置
+  async_audit: true
+  audit_full_request: true
+  audit_full_response: true
+
+# Phase 2.4: 模型路由配置
+model_routing:
+  enabled: true
+  
+  # 云端代理配置
+  cloud_proxy:
+    host: "10.101.32.14"
+    port: 34094
+    base_path: "/openapi/proxy"
+    
+  # 认证配置
+  auth:
+    app_key: "1_C2D6F4B1183D592E04BA216D71A84F17"
+    system_source: "M-FastGate" 

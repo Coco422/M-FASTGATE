@@ -1,0 +1,40 @@
+version: '3.8'
+
+services:
+  m-fastgate:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      platforms:
+        - linux/arm64
+    container_name: m-fastgate
+    restart: unless-stopped
+    ports:
+      - "8514:8514"
+    volumes:
+      # 数据库持久化
+      - ./data:/app/data
+      # 日志持久化
+      - ./logs:/app/logs
+      # 配置文件挂载
+      - ./config:/app/config:ro
+    environment:
+      - ENVIRONMENT=production
+      - PYTHONUNBUFFERED=1
+    networks:
+      - fastgate-network
+    platform: linux/arm64
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8514/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+networks:
+  fastgate-network:
+    driver: bridge
+
+volumes:
+  fastgate-data:
+    driver: local 
