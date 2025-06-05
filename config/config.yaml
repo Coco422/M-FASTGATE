@@ -1,0 +1,48 @@
+# M-FastGate v0.2.0 统一配置文件
+
+app:
+  name: "M-FastGate"
+  version: "0.2.0"
+  host: "0.0.0.0"
+  port: 8514
+  debug: true
+
+database:
+  url: "sqlite:///./app/data/fastgate.db"
+  echo: false
+
+security:
+  admin_token: "admin_secret_token_dev"
+  key_prefix: "fg_"
+  default_expiry_days: 365
+
+logging:
+  level: "INFO"
+  format: "json"
+  file: "logs/fastgate.log"
+
+rate_limiting:
+  enabled: true
+  default_requests_per_minute: 100
+
+proxy:
+  # 通用代理配置
+  timeout: 30
+  max_retries: 3
+  enable_streaming: true
+  
+  # 请求清洗配置
+  strip_headers:
+    - "host"
+    - "x-api-key" 
+    - "authorization"
+    - "x-forwarded-for"
+    - "x-real-ip"
+    - "x-source-path"
+    - "user-agent"
+    - "content-length"
+  
+  # 审计配置
+  async_audit: true
+  audit_full_request: true
+  audit_full_response: true 

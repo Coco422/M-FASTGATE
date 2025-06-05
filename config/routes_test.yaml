@@ -1,9 +1,0 @@
-routes:
-  - name: "测试示例服务"
-    path_prefix: "/api/v1/example"
-    targets:
-      - url: "http://localhost:8002"
-        timeout: 30
-    auth_required: true
-    
-  # 测试路由配置 

@@ -1,9 +1,0 @@
-routes:
-  - name: "示例服务"
-    path_prefix: "/api/v1/example"
-    targets:
-      - url: "http://localhost:8001"
-        timeout: 30
-    auth_required: true
-    
-  # 可以添加更多路由配置 
