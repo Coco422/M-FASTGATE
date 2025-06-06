@@ -27,23 +27,7 @@ async def universal_proxy(
     api_key_info: APIKeyResponse = Depends(api_key_auth)
 ):
     """
-    统一代理接口 - v0.2.0核心功能
-    
-    支持：
-    - 路径匹配和前缀剥离
-    - 请求体内容匹配
-    - 请求头和请求体转换
-    - 流式和非流式响应
-    - 完整的审计日志
-    
-    Args:
-        path: 请求路径
-        request: FastAPI请求对象  
-        db: 数据库会话
-        api_key_info: API密钥信息
-        
-    Returns:
-        Response: 代理响应或错误响应
+    统一代理接口 - 带完整异步审计功能
     """
     start_time = time.time()
     request_id = generate_request_id()
@@ -66,7 +50,6 @@ async def universal_proxy(
             if "application/json" in content_type:
                 request_body = await request.json()
             elif content_type:
-                # 其他类型的请求体，读取为bytes
                 request_body = await request.body()
         
         # 获取所有活跃的代理路由
@@ -110,10 +93,11 @@ async def universal_proxy(
         route_match = route_matcher.find_matching_route(request_info, route_dicts)
         
         if not route_match:
-            # 记录未匹配的审计日志
+            # 记录未匹配的审计日志（异步）
             await audit_service.log_request_start({
                 "request_id": request_id,
                 "api_key": api_key_info.key_value,
+                "source_path": source_path,
                 "path": request_path,
                 "method": request.method,
                 "ip_address": client_ip,
@@ -137,28 +121,11 @@ async def universal_proxy(
         # 构建目标URL
         target_url = proxy_engine.build_target_url(route_match, request_path)
         
-        # 代理请求执行
-        response = await proxy_engine.forward_request(
-            route_config=route_match,
-            method=request.method,
-            url=target_url,
-            headers=dict(request.headers),
-            json=request_body if isinstance(request_body, dict) else None,
-            content=request_body if isinstance(request_body, bytes) else None
-        )
-        
-        # 计算总响应时间
-        end_time = time.time()
-        total_response_time = int((end_time - start_time) * 1000)
-        
-        # 检查是否为流式响应
-        is_stream = proxy_engine.is_stream_response(response)
-        
-        # 记录请求开始（包含source_path）
+        # 异步记录请求开始（不等待，不阻塞）
         await audit_service.log_request_start({
             "request_id": request_id,
             "api_key": api_key_info.key_value,
-            "source_path": api_key_info.source_path,  # 添加source_path
+            "source_path": source_path,
             "path": request_path,
             "method": request.method,
             "ip_address": client_ip,
@@ -170,45 +137,69 @@ async def universal_proxy(
             "request_size": len(str(request_body)) if request_body else 0
         })
         
-        # 返回响应
-        if is_stream:
-            # 对于流式响应，传递审计服务和请求ID到流式处理器
-            return await proxy_engine.handle_stream_response(response, audit_service, request_id)
-        else:
-            # 非流式响应处理
-            response_content = await response.aread()
-            
-            # 记录非流式请求完成
-            await audit_service.log_request_complete(request_id, {
-                "status_code": response.status_code,
-                "response_time": datetime.now(),
-                "is_stream": False,
-                "response_headers": dict(response.headers),
-                "response_body": response_content,
-                "response_size": len(response_content) if response_content else 0
-            })
-            
-            # 处理响应头
-            processed_headers = proxy_engine._process_response_headers(dict(response.headers))
-            
-            return Response(
-                content=response_content,
-                status_code=response.status_code,
-                headers=processed_headers,
-                media_type=response.headers.get("content-type", "application/json")
+        # 预判断是否为流式请求
+        is_likely_stream = False
+        if isinstance(request_body, dict) and request_body.get("stream") is True:
+            is_likely_stream = True
+        
+        # 检查是否为流式响应 - 提前处理
+        if is_likely_stream:
+            # 直接使用流式请求方法，传递审计信息
+            return await proxy_engine.forward_stream_request(
+                route_config=route_match,
+                method=request.method,
+                url=target_url,
+                headers=dict(request.headers),
+                json=request_body if isinstance(request_body, dict) else None,
+                content=request_body if isinstance(request_body, bytes) else None,
+                audit_service=audit_service,
+                request_id=request_id
             )
+        
+        # 非流式请求的传统处理
+        response = await proxy_engine.forward_request(
+            route_config=route_match,
+            method=request.method,
+            url=target_url,
+            headers=dict(request.headers),
+            json=request_body if isinstance(request_body, dict) else None,
+            content=request_body if isinstance(request_body, bytes) else None,
+            is_stream_request=False
+        )
+        
+        # 非流式响应处理
+        response_content = await response.aread()
+        
+        # 异步记录非流式请求完成（不等待）
+        await audit_service.log_request_complete(request_id, {
+            "status_code": response.status_code,
+            "response_time": datetime.now(),
+            "is_stream": False,
+            "response_headers": dict(response.headers),
+            "response_body": response_content if len(response_content) < 10240 else None,  # 限制大小
+            "response_size": len(response_content) if response_content else 0
+        })
+        
+        processed_headers = proxy_engine._process_response_headers(dict(response.headers))
+        
+        return Response(
+            content=response_content,
+            status_code=response.status_code,
+            headers=processed_headers,
+            media_type=response.headers.get("content-type", "application/json")
+        )
             
     except HTTPException:
-        # 重新抛出HTTP异常
         raise
         
     except Exception as e:
-        # 记录错误的审计日志
+        # 记录错误的审计日志（异步）
         end_time = time.time()
         
         await audit_service.log_request_start({
             "request_id": request_id,
             "api_key": api_key_info.key_value,
+            "source_path": source_path,
             "path": request_path,
             "method": request.method,
             "ip_address": client_ip,

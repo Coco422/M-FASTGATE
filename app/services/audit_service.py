@@ -62,38 +62,51 @@ class AuditService:
             return await self._log_request_start_impl(request_info)
     
     async def _log_request_start_impl(self, request_info: Dict[str, Any]) -> str:
-        """记录请求开始的实现"""
+        """记录请求开始的实现 - 使用后台线程避免阻塞"""
         try:
             log_id = generate_log_id()
             request_id = request_info.get("request_id") or generate_request_id()
             
-            # 创建审计日志记录
-            db_log = AuditLogDB(
-                id=log_id,
-                request_id=request_id,
-                api_key=request_info.get("api_key"),
-                source_path=request_info.get("source_path"),
-                method=request_info.get("method"),
-                path=request_info.get("path"),
-                target_url=request_info.get("target_url"),
-                request_time=request_info.get("request_time", get_china_time()),
-                request_size=request_info.get("request_size", 0),
-                user_agent=request_info.get("user_agent"),
-                ip_address=request_info.get("ip_address"),
-                request_headers=self._serialize_headers(request_info.get("request_headers")),
-                request_body=self._serialize_body(request_info.get("request_body"))
-            )
+            # 准备数据库记录数据
+            db_log_data = {
+                "id": log_id,
+                "request_id": request_id,
+                "api_key": request_info.get("api_key"),
+                "source_path": request_info.get("source_path"),
+                "method": request_info.get("method"),
+                "path": request_info.get("path"),
+                "target_url": request_info.get("target_url"),
+                "request_time": request_info.get("request_time", get_china_time()),
+                "request_size": request_info.get("request_size", 0),
+                "user_agent": request_info.get("user_agent"),
+                "ip_address": request_info.get("ip_address"),
+                "request_headers": self._serialize_headers(request_info.get("request_headers")),
+                "request_body": self._serialize_body(request_info.get("request_body"))
+            }
             
-            # 保存到数据库
-            db = next(get_db())
-            try:
-                db.add(db_log)
-                db.commit()
-            finally:
-                db.close()
+            # 在后台线程中执行数据库操作，完全不阻塞主线程
+            def save_to_db():
+                try:
+                    # 创建审计日志记录
+                    db_log = AuditLogDB(**db_log_data)
+                    
+                    # 保存到数据库
+                    db = next(get_db())
+                    try:
+                        db.add(db_log)
+                        db.commit()
+                    finally:
+                        db.close()
+                except Exception as e:
+                    # 后台线程中的错误抛出到主线程
+                    raise e
+            
+            # 使用后台线程执行数据库操作
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(None, save_to_db)
             
             self.logger.info(
-                "Request start logged",
+                "Request start logged (async)",
                 request_id=request_id,
                 log_id=log_id,
                 method=request_info.get("method"),
@@ -118,10 +131,8 @@ class AuditService:
             request_id: 请求ID
             first_response_time: 首次响应时间
         """
-        if self.async_audit:
-            asyncio.create_task(self._log_first_response_impl(request_id, first_response_time))
-        else:
-            await self._log_first_response_impl(request_id, first_response_time)
+        # 对于首次响应记录，也要完全异步，不阻塞流式响应
+        asyncio.create_task(self._log_first_response_impl(request_id, first_response_time))
     
     async def _log_first_response_impl(self, request_id: str, first_response_time: datetime) -> None:
         """记录首次响应时间的实现"""
@@ -217,26 +228,36 @@ class AuditService:
             request_id: 请求ID
             chunk_size: 块大小
         """
-        if self.async_audit:
-            # 异步处理，不阻塞主流程
-            asyncio.create_task(self._log_stream_chunk_impl(request_id, chunk_size))
-        else:
-            # 同步处理
-            await self._log_stream_chunk_impl(request_id, chunk_size)
+        # 对于流式响应，完全异步处理，绝不阻塞主流程
+        # 即使 async_audit 为 False，也要异步处理流式块记录
+        asyncio.create_task(self._log_stream_chunk_impl(request_id, chunk_size))
     
     async def _log_stream_chunk_impl(self, request_id: str, chunk_size: int) -> None:
         """记录流式响应块的实现"""
         try:
-            db = next(get_db())
-            try:
-                audit_log = db.query(AuditLogDB).filter(AuditLogDB.request_id == request_id).first()
-                if audit_log:
-                    # 增量更新
-                    audit_log.stream_chunks = (audit_log.stream_chunks or 0) + 1
-                    audit_log.response_size = (audit_log.response_size or 0) + chunk_size
-                    db.commit()
-            finally:
-                db.close()
+            # 使用异步数据库操作，减少阻塞
+            import asyncio
+            import threading
+            
+            def update_in_thread():
+                try:
+                    db = next(get_db())
+                    try:
+                        audit_log = db.query(AuditLogDB).filter(AuditLogDB.request_id == request_id).first()
+                        if audit_log:
+                            # 增量更新
+                            audit_log.stream_chunks = (audit_log.stream_chunks or 0) + 1
+                            audit_log.response_size = (audit_log.response_size or 0) + chunk_size
+                            db.commit()
+                    finally:
+                        db.close()
+                except Exception as e:
+                    # 在线程中的错误不抛出，只记录
+                    pass
+            
+            # 在后台线程中执行数据库更新，完全不阻塞事件循环
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(None, update_in_thread)
                     
         except Exception as e:
             # 流式块记录失败不应该影响主流程，只记录警告
