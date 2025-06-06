@@ -144,12 +144,12 @@ function updateStatCards(stats, keyCount) {
     // 请求总数
     document.getElementById('totalRequests').textContent = stats.total_requests || 0;
 
-    // 平均响应时间
-    const avgTime = stats.avg_response_time_ms || 0;
+    // 平均响应时间 - 兼容后端字段名
+    const avgTime = stats.average_response_time || stats.avg_response_time_ms || 0;
     document.getElementById('avgResponseTime').textContent = avgTime.toFixed(0);
 
-    // 成功率
-    const statusCounts = stats.status_counts || {};
+    // 成功率 - 兼容后端字段名
+    const statusCounts = stats.status_distribution || stats.status_counts || {};
     const totalRequests = stats.total_requests || 0;
     let successCount = 0;
     
@@ -160,20 +160,24 @@ function updateStatCards(stats, keyCount) {
         }
     });
 
-    const successRate = totalRequests > 0 ? (successCount / totalRequests * 100).toFixed(1) : 0;
+    // 如果没有status分布数据，使用后端提供的成功率
+    const successRate = stats.success_rate !== undefined ? 
+        stats.success_rate : 
+        (totalRequests > 0 ? (successCount / totalRequests * 100).toFixed(1) : 0);
     document.getElementById('successRate').textContent = successRate + '%';
 
     // 更新系统状态
-    updateSystemStatus(successRate);
+    updateSystemStatus(successRate, stats, keyCount);
 }
 
 /**
  * 更新系统状态
  */
-function updateSystemStatus(successRate) {
+function updateSystemStatus(successRate, stats, keyCount) {
     const statusElement = document.getElementById('systemStatus');
     const serviceStatusElement = document.getElementById('serviceStatus');
     
+    // 更新卡片中的系统状态
     if (successRate >= 95) {
         statusElement.textContent = '良好';
         statusElement.className = 'text-success';
@@ -195,6 +199,68 @@ function updateSystemStatus(successRate) {
             serviceStatusElement.className = 'badge bg-danger';
             serviceStatusElement.textContent = '异常';
         }
+    }
+    
+    // 更新系统信息面板
+    updateSystemInfoPanel(successRate, stats, keyCount);
+}
+
+/**
+ * 更新系统信息面板
+ */
+function updateSystemInfoPanel(successRate, stats, keyCount) {
+    // 服务状态文本
+    const serviceStatusText = document.getElementById('serviceStatusText');
+    if (serviceStatusText) {
+        if (successRate >= 95) {
+            serviceStatusText.textContent = '运行中';
+            serviceStatusText.className = 'text-success';
+        } else if (successRate >= 80) {
+            serviceStatusText.textContent = '注意';
+            serviceStatusText.className = 'text-warning';
+        } else {
+            serviceStatusText.textContent = '异常';
+            serviceStatusText.className = 'text-danger';
+        }
+    }
+    
+    // 健康状态
+    const healthStatus = document.getElementById('healthStatus');
+    if (healthStatus) {
+        if (successRate >= 95) {
+            healthStatus.textContent = '优秀';
+            healthStatus.className = 'text-success';
+        } else if (successRate >= 90) {
+            healthStatus.textContent = '良好';
+            healthStatus.className = 'text-success';
+        } else if (successRate >= 80) {
+            healthStatus.textContent = '一般';
+            healthStatus.className = 'text-warning';
+        } else {
+            healthStatus.textContent = '异常';
+            healthStatus.className = 'text-danger';
+        }
+    }
+    
+    // 活跃密钥数量
+    const activeKeysCount = document.getElementById('activeKeysCount');
+    if (activeKeysCount && stats) {
+        const activeKeys = stats.active_api_keys || keyCount || 0;
+        activeKeysCount.textContent = `${activeKeys} 个`;
+    }
+    
+    // 活跃路由数量
+    const activeRoutesCount = document.getElementById('activeRoutesCount');
+    if (activeRoutesCount && stats) {
+        const activeRoutes = stats.active_routes || 0;
+        activeRoutesCount.textContent = `${activeRoutes} 个`;
+    }
+    
+    // 最后更新时间
+    const lastUpdateTime = document.getElementById('lastUpdateTime');
+    if (lastUpdateTime) {
+        const now = new Date();
+        lastUpdateTime.textContent = now.toLocaleTimeString();
     }
 }
 
@@ -316,19 +382,27 @@ async function updateRequestChart(stats) {
         
         if (response.ok) {
             const hourlyData = await response.json();
+            console.log('Dashboard: Hourly data received:', hourlyData);
             
             const labels = [];
             const data = [];
             
-            // 处理后端返回的小时数据
-            for (let i = 23; i >= 0; i--) {
-                const time = new Date(Date.now() - i * 60 * 60 * 1000);
-                const hourKey = time.getHours();
-                labels.push(hourKey + ':00');
-                
-                // 查找对应小时的数据
-                const hourData = hourlyData.find(h => h.hour === hourKey);
-                data.push(hourData ? hourData.requests : 0);
+            if (hourlyData && hourlyData.length > 0) {
+                // 使用后端返回的实际数据
+                hourlyData.forEach(item => {
+                    // 格式化时间标签 (hour字段是 "YYYY-MM-DD HH:00:00" 格式)
+                    const hourTime = new Date(item.hour);
+                    const hourLabel = hourTime.getHours().toString().padStart(2, '0') + ':00';
+                    labels.push(hourLabel);
+                    data.push(item.total_requests || 0);
+                });
+            } else {
+                // 如果没有数据，生成空的24小时标签
+                for (let i = 23; i >= 0; i--) {
+                    const time = new Date(Date.now() - i * 60 * 60 * 1000);
+                    labels.push(time.getHours().toString().padStart(2, '0') + ':00');
+                    data.push(0);
+                }
             }
             
             requestChart.data.labels = labels;

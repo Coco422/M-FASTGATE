@@ -236,6 +236,87 @@ footer {
     border-top: 1px solid #dee2e6;
 }
 
+/* 系统状态面板样式 */
+.system-status-item {
+    padding: 0.75rem;
+    border-radius: 0.375rem;
+    background-color: #f8f9fa;
+    margin-bottom: 0.5rem;
+    transition: all 0.2s ease;
+}
+
+.system-status-item:hover {
+    background-color: #e9ecef;
+    transform: translateY(-1px);
+}
+
+.system-status-item .fw-bold {
+    font-size: 0.875rem;
+    color: #495057;
+}
+
+.system-status-item small {
+    font-size: 0.75rem;
+}
+
+/* 图表容器增强 */
+.chart-container {
+    position: relative;
+    height: 300px;
+    padding: 1rem;
+}
+
+/* 快速操作按钮样式 */
+.quick-actions .btn {
+    border-radius: 0.5rem;
+    font-weight: 500;
+    padding: 0.5rem 0.75rem;
+    transition: all 0.2s ease;
+}
+
+.quick-actions .btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+}
+
+/* 状态指示器 */
+.status-indicator {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    display: inline-block;
+    margin-right: 0.5rem;
+    animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+    0% { opacity: 1; }
+    50% { opacity: 0.5; }
+    100% { opacity: 1; }
+}
+
+.status-indicator.success {
+    background-color: #28a745;
+}
+
+.status-indicator.warning {
+    background-color: #ffc107;
+}
+
+.status-indicator.danger {
+    background-color: #dc3545;
+}
+
+/* 系统信息文本样式 */
+.system-info-text {
+    font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, Courier, monospace;
+    font-size: 0.8rem;
+    background-color: #f8f9fa;
+    padding: 0.25rem 0.5rem;
+    border-radius: 0.25rem;
+    border: 1px solid #dee2e6;
+}
+
 /* 自定义滚动条 */
 ::-webkit-scrollbar {
     width: 8px;

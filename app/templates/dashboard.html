@@ -43,7 +43,7 @@
                     <div>
                         <h5 class="card-title">请求总数</h5>
                         <h3 id="totalRequests">-</h3>
-                        <p class="card-text">今日统计</p>
+                        <p class="card-text">全部统计</p>
                     </div>
                     <div class="align-self-center">
                         <i class="fas fa-exchange-alt fa-2x"></i>
@@ -103,57 +103,131 @@
     </div>
 </div>
 
-<!-- 快速操作 -->
+<!-- 图表和信息面板 -->
 <div class="row mt-4">
-    <div class="col-md-8">
+    <!-- 请求趋势图表 -->
+    <div class="col-lg-7">
         <div class="card">
-            <div class="card-header">
+            <div class="card-header d-flex justify-content-between align-items-center">
                 <h5><i class="fas fa-chart-line me-2"></i>最近24小时请求趋势</h5>
+                <small class="text-muted">实时更新</small>
             </div>
             <div class="card-body">
-                <canvas id="requestChart" height="100"></canvas>
+                <canvas id="requestChart" height="120"></canvas>
             </div>
         </div>
     </div>
     
-    <div class="col-md-4">
-        <div class="card">
+    <!-- 系统信息和快速操作 -->
+    <div class="col-lg-5">
+        <!-- 系统状态卡片 -->
+        <div class="card mb-3">
             <div class="card-header">
-                <h5><i class="fas fa-bolt me-2"></i>快速操作</h5>
+                <h5><i class="fas fa-server me-2"></i>系统状态</h5>
             </div>
             <div class="card-body">
-                <div class="d-grid gap-2">
-                    <button class="btn btn-primary" onclick="showCreateKeyModal()">
-                        <i class="fas fa-plus me-2"></i>
-                        创建API Key
-                    </button>
-                    <a href="/admin/ui/logs" class="btn btn-outline-info">
-                        <i class="fas fa-eye me-2"></i>
-                        查看最新日志
-                    </a>
-                    <button class="btn btn-outline-success" onclick="refreshSystemStatus()">
-                        <i class="fas fa-sync me-2"></i>
-                        刷新系统状态
-                    </button>
-                    <a href="/docs" target="_blank" class="btn btn-outline-secondary">
-                        <i class="fas fa-book me-2"></i>
-                        查看API文档
-                    </a>
+                <div class="row g-3">
+                    <div class="col-6">
+                        <div class="d-flex align-items-center">
+                            <div class="flex-shrink-0">
+                                <i class="fas fa-circle text-success"></i>
+                            </div>
+                            <div class="flex-grow-1 ms-2">
+                                <div class="fw-bold">服务状态</div>
+                                <small id="serviceStatusText" class="text-muted">运行中</small>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-6">
+                        <div class="d-flex align-items-center">
+                            <div class="flex-shrink-0">
+                                <i class="fas fa-shield-alt text-info"></i>
+                            </div>
+                            <div class="flex-grow-1 ms-2">
+                                <div class="fw-bold">健康状态</div>
+                                <small id="healthStatus" class="text-muted">良好</small>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-6">
+                        <div class="d-flex align-items-center">
+                            <div class="flex-shrink-0">
+                                <i class="fas fa-key text-warning"></i>
+                            </div>
+                            <div class="flex-grow-1 ms-2">
+                                <div class="fw-bold">活跃密钥</div>
+                                <small id="activeKeysCount" class="text-muted">-</small>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-6">
+                        <div class="d-flex align-items-center">
+                            <div class="flex-shrink-0">
+                                <i class="fas fa-route text-primary"></i>
+                            </div>
+                            <div class="flex-grow-1 ms-2">
+                                <div class="fw-bold">活跃路由</div>
+                                <small id="activeRoutesCount" class="text-muted">-</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <hr class="my-3">
+                <div class="row">
+                    <div class="col-12">
+                        <small class="text-muted">
+                            <i class="fas fa-globe me-1"></i>
+                            网关地址: <code id="gatewayUrl">{{ gateway_url or 'http://localhost:8514' }}</code>
+                        </small>
+                    </div>
+                    <div class="col-12 mt-1">
+                        <small class="text-muted">
+                            <i class="fas fa-plug me-1"></i>
+                            代理端点: <code>/proxy/*/v1/chat/completions</code>
+                        </small>
+                    </div>
+                    <div class="col-12 mt-1">
+                        <small class="text-muted">
+                            <i class="fas fa-clock me-1"></i>
+                            最后更新: <span id="lastUpdateTime">-</span>
+                        </small>
+                    </div>
                 </div>
             </div>
         </div>
         
-        <div class="card mt-3">
+        <!-- 快速操作 -->
+        <div class="card">
             <div class="card-header">
-                <h5><i class="fas fa-info-circle me-2"></i>系统信息</h5>
+                <h5><i class="fas fa-bolt me-2"></i>快速操作</h5>
             </div>
-            <div class="card-body">
-                <ul class="list-unstyled">
-                    <li><strong>服务状态:</strong> <span id="serviceStatus" class="badge bg-success">运行中</span></li>
-                    <li><strong>网关地址:</strong> <code id="gatewayUrl">{{ gateway_url }}</code></li>
-                    <li><strong>API端点:</strong> <code>/proxy/miniai/v2/chat/completions</code></li>
-                    <li><strong>管理Token:</strong> <span class="text-muted">已配置</span></li>
-                </ul>
+            <div class="card-body quick-actions">
+                <div class="row g-2">
+                    <div class="col-6">
+                        <button class="btn btn-primary w-100 btn-sm" onclick="showCreateKeyModal()">
+                            <i class="fas fa-plus me-1"></i>
+                            创建密钥
+                        </button>
+                    </div>
+                    <div class="col-6">
+                        <a href="/admin/ui/logs" class="btn btn-outline-info w-100 btn-sm">
+                            <i class="fas fa-eye me-1"></i>
+                            查看日志
+                        </a>
+                    </div>
+                    <div class="col-6">
+                        <button class="btn btn-outline-success w-100 btn-sm" onclick="refreshSystemStatus()">
+                            <i class="fas fa-sync me-1"></i>
+                            刷新状态
+                        </button>
+                    </div>
+                    <div class="col-6">
+                        <a href="/docs" target="_blank" class="btn btn-outline-secondary w-100 btn-sm">
+                            <i class="fas fa-book me-1"></i>
+                            API文档
+                        </a>
+                    </div>
+                </div>
             </div>
         </div>
     </div>

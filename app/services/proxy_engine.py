@@ -153,12 +153,14 @@ class ProxyEngine:
         self.logger.error("Request forwarding failed", error=error_msg)
         raise HTTPException(status_code=502, detail=error_msg)
     
-    async def handle_stream_response(self, response: httpx.Response) -> StreamingResponse:
+    async def handle_stream_response(self, response: httpx.Response, audit_service=None, request_id=None) -> StreamingResponse:
         """
         处理流式响应
         
         Args:
             response: 原始响应对象
+            audit_service: 审计服务实例（可选）
+            request_id: 请求ID（可选）
             
         Returns:
             StreamingResponse: FastAPI流式响应
@@ -170,37 +172,78 @@ class ProxyEngine:
         )
         
         async def stream_wrapper() -> AsyncGenerator[bytes, None]:
-            """流式响应包装器"""
+            """无缓冲流式响应包装器"""
             chunk_count = 0
             total_size = 0
+            first_chunk_sent = False
             
             try:
-                async for chunk in response.aiter_bytes(chunk_size=settings.proxy.get('stream_chunk_size', 8192)):
+                # 极小的chunk size以实现真正的实时流式
+                chunk_size = 64  # 64字节，确保最小延迟
+                
+                async for chunk in response.aiter_bytes(chunk_size=chunk_size):
+                    if not chunk:  # 跳过空chunk
+                        continue
+                        
                     chunk_count += 1
                     total_size += len(chunk)
+                    
+                    # 只在第一个chunk记录（完全异步，无等待）
+                    if not first_chunk_sent and audit_service and request_id:
+                        first_chunk_sent = True
+                        import asyncio
+                        from datetime import datetime
+                        asyncio.create_task(audit_service.log_first_response(request_id, datetime.now()))
+                    
+                    # 立即yield，绝对不延迟
                     yield chunk
+                    
+                    # 仅偶尔记录统计（不影响主流程）
+                    if audit_service and request_id and chunk_count % 50 == 0:
+                        import asyncio
+                        asyncio.create_task(audit_service.log_stream_chunk(request_id, len(chunk) * 50))
                     
                 self.logger.info(
                     "Stream completed",
                     chunk_count=chunk_count,
                     total_size=total_size
                 )
+                
+                # 异步记录完成（不等待）
+                if audit_service and request_id:
+                    import asyncio
+                    from datetime import datetime
+                    asyncio.create_task(audit_service.log_request_complete(request_id, {
+                        "status_code": response.status_code,
+                        "response_time": datetime.now(),
+                        "is_stream": True,
+                        "stream_chunks": chunk_count,
+                        "response_headers": dict(response.headers),
+                        "response_body": None,
+                        "response_size": total_size
+                    }))
                     
             except Exception as e:
-                self.logger.error(
-                    "Error during stream processing",
-                    error=str(e),
-                    chunk_count=chunk_count,
-                    total_size=total_size
-                )
-                # 发送错误消息（如果是SSE格式）
-                if "text/event-stream" in response.headers.get("content-type", ""):
-                    yield f"data: {json.dumps({'error': str(e)})}\n\n".encode()
+                self.logger.error("Stream error", error=str(e))
+                # 异步记录错误
+                if audit_service and request_id:
+                    import asyncio
+                    from datetime import datetime
+                    asyncio.create_task(audit_service.log_request_complete(request_id, {
+                        "status_code": response.status_code,
+                        "response_time": datetime.now(),
+                        "is_stream": True,
+                        "stream_chunks": chunk_count,
+                        "response_headers": dict(response.headers),
+                        "response_body": None,
+                        "response_size": total_size,
+                        "error_message": str(e)
+                    }))
                 raise
             finally:
                 await response.aclose()
         
-        # 过滤和处理响应头
+        # 优化响应头
         response_headers = self._process_response_headers(dict(response.headers))
         
         return StreamingResponse(
@@ -299,13 +342,22 @@ class ProxyEngine:
         """
         processed_headers = {}
         
+        # 对于流式响应，需要特殊处理
+        content_type = headers.get("content-type", "").lower()
+        is_stream = ("text/event-stream" in content_type or 
+                    "application/x-ndjson" in content_type)
+        
         # 保留重要的响应头
         important_headers = [
-            'content-type', 'content-length', 'content-encoding',
+            'content-type', 'content-encoding',
             'cache-control', 'etag', 'last-modified',
             'access-control-allow-origin', 'access-control-allow-methods',
             'access-control-allow-headers', 'access-control-expose-headers'
         ]
+        
+        # 对于流式响应，不传递content-length
+        if not is_stream:
+            important_headers.append('content-length')
         
         for key, value in headers.items():
             if key.lower() in important_headers:
@@ -313,6 +365,13 @@ class ProxyEngine:
         
         # 添加代理标识
         processed_headers['x-proxied-by'] = f"M-FastGate/{settings.app['version']}"
+        
+        # 对于流式响应，添加优化头
+        if is_stream:
+            processed_headers['cache-control'] = 'no-cache'
+            processed_headers['connection'] = 'keep-alive'
+            # 禁用nginx等的缓冲
+            processed_headers['x-accel-buffering'] = 'no'
         
         return processed_headers
     

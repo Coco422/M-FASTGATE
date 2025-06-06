@@ -217,10 +217,12 @@ class AuditService:
             request_id: 请求ID
             chunk_size: 块大小
         """
-        if not self.async_audit:
-            return  # 只在异步模式下支持
-            
-        asyncio.create_task(self._log_stream_chunk_impl(request_id, chunk_size))
+        if self.async_audit:
+            # 异步处理，不阻塞主流程
+            asyncio.create_task(self._log_stream_chunk_impl(request_id, chunk_size))
+        else:
+            # 同步处理
+            await self._log_stream_chunk_impl(request_id, chunk_size)
     
     async def _log_stream_chunk_impl(self, request_id: str, chunk_size: int) -> None:
         """记录流式响应块的实现"""

@@ -154,10 +154,11 @@ async def universal_proxy(
         # 检查是否为流式响应
         is_stream = proxy_engine.is_stream_response(response)
         
-        # 记录请求开始
+        # 记录请求开始（包含source_path）
         await audit_service.log_request_start({
             "request_id": request_id,
             "api_key": api_key_info.key_value,
+            "source_path": api_key_info.source_path,  # 添加source_path
             "path": request_path,
             "method": request.method,
             "ip_address": client_ip,
@@ -169,21 +170,24 @@ async def universal_proxy(
             "request_size": len(str(request_body)) if request_body else 0
         })
         
-        # 记录请求完成
-        response_content = None if is_stream else await response.aread()
-        await audit_service.log_request_complete(request_id, {
-            "status_code": response.status_code,
-            "response_time": datetime.now(),
-            "is_stream": is_stream,
-            "response_headers": dict(response.headers),
-            "response_body": response_content,
-            "response_size": len(response_content) if response_content else 0
-        })
-        
         # 返回响应
         if is_stream:
-            return await proxy_engine.handle_stream_response(response)
+            # 对于流式响应，传递审计服务和请求ID到流式处理器
+            return await proxy_engine.handle_stream_response(response, audit_service, request_id)
         else:
+            # 非流式响应处理
+            response_content = await response.aread()
+            
+            # 记录非流式请求完成
+            await audit_service.log_request_complete(request_id, {
+                "status_code": response.status_code,
+                "response_time": datetime.now(),
+                "is_stream": False,
+                "response_headers": dict(response.headers),
+                "response_body": response_content,
+                "response_size": len(response_content) if response_content else 0
+            })
+            
             # 处理响应头
             processed_headers = proxy_engine._process_response_headers(dict(response.headers))
             

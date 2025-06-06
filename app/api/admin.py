@@ -684,32 +684,36 @@ async def get_hourly_metrics(
     """
     获取按小时统计的指标数据
     """
-    from ..models.audit_log import AuditLogDB
+    from ..models.audit_log import AuditLogDB, china_tz
     from sqlalchemy import func, and_
     from datetime import datetime, timedelta
     
-    # 计算时间范围
-    end_time = datetime.utcnow()
+    # 计算时间范围 - 使用中国时区
+    end_time = datetime.now(china_tz)
     start_time = end_time - timedelta(hours=hours)
     
-    # 按小时分组查询
+    # 转换为数据库存储格式（中国时区的本地时间）
+    start_time_local = start_time.replace(tzinfo=None)
+    end_time_local = end_time.replace(tzinfo=None)
+    
+    # 按小时分组查询 - 使用 SQLite 兼容的 strftime 函数
     hourly_stats = db.query(
-        func.date_trunc('hour', AuditLogDB.request_time).label('hour'),
+        func.strftime('%Y-%m-%d %H:00:00', AuditLogDB.request_time).label('hour'),
         func.count(AuditLogDB.id).label('total_requests'),
         func.count().filter(AuditLogDB.status_code >= 400).label('errors'),
         func.avg(AuditLogDB.response_time_ms).label('avg_response_time')
     ).filter(
         and_(
-            AuditLogDB.request_time >= start_time,
-            AuditLogDB.request_time <= end_time
+            AuditLogDB.request_time >= start_time_local,
+            AuditLogDB.request_time <= end_time_local
         )
     ).group_by(
-        func.date_trunc('hour', AuditLogDB.request_time)
+        func.strftime('%Y-%m-%d %H:00:00', AuditLogDB.request_time)
     ).order_by('hour').all()
     
     return [
         {
-            "hour": stat.hour.isoformat(),
+            "hour": stat.hour,  # strftime 已经返回字符串格式，不需要 isoformat()
             "total_requests": stat.total_requests,
             "errors": stat.errors or 0,
             "success_rate": round(((stat.total_requests - (stat.errors or 0)) / stat.total_requests * 100), 2) if stat.total_requests > 0 else 100.0,
@@ -728,32 +732,36 @@ async def get_daily_metrics(
     """
     获取按天统计的指标数据
     """
-    from ..models.audit_log import AuditLogDB
+    from ..models.audit_log import AuditLogDB, china_tz
     from sqlalchemy import func, and_
     from datetime import datetime, timedelta
     
-    # 计算时间范围
-    end_time = datetime.utcnow()
+    # 计算时间范围 - 使用中国时区
+    end_time = datetime.now(china_tz)
     start_time = end_time - timedelta(days=days)
     
-    # 按天分组查询
+    # 转换为数据库存储格式（中国时区的本地时间）
+    start_time_local = start_time.replace(tzinfo=None)
+    end_time_local = end_time.replace(tzinfo=None)
+    
+    # 按天分组查询 - 使用 SQLite 兼容的 strftime 函数
     daily_stats = db.query(
-        func.date_trunc('day', AuditLogDB.request_time).label('day'),
+        func.strftime('%Y-%m-%d', AuditLogDB.request_time).label('day'),
         func.count(AuditLogDB.id).label('total_requests'),
         func.count().filter(AuditLogDB.status_code >= 400).label('errors'),
         func.avg(AuditLogDB.response_time_ms).label('avg_response_time')
     ).filter(
         and_(
-            AuditLogDB.request_time >= start_time,
-            AuditLogDB.request_time <= end_time
+            AuditLogDB.request_time >= start_time_local,
+            AuditLogDB.request_time <= end_time_local
         )
     ).group_by(
-        func.date_trunc('day', AuditLogDB.request_time)
+        func.strftime('%Y-%m-%d', AuditLogDB.request_time)
     ).order_by('day').all()
     
     return [
         {
-            "day": stat.day.isoformat(),
+            "day": stat.day,  # strftime 已经返回字符串格式，不需要 isoformat()
             "total_requests": stat.total_requests,
             "errors": stat.errors or 0,
             "success_rate": round(((stat.total_requests - (stat.errors or 0)) / stat.total_requests * 100), 2) if stat.total_requests > 0 else 100.0,
