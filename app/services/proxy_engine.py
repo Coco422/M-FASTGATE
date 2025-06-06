@@ -95,19 +95,15 @@ class ProxyEngine:
         # 执行请求（带重试）
         for attempt in range(retry_count + 1):
             try:
-                # 详细记录请求信息，包括处理后的请求头和请求体
-                self.logger.info(
-                    "=== DETAILED REQUEST LOG ===",
+                # 调试日志：记录改造后的请求头和请求体
+                self.logger.debug(
+                    "Proxy request details",
                     method=method,
                     url=url,
-                    attempt=attempt + 1,
-                    max_attempts=retry_count + 1,
-                    is_stream=is_stream_request,
                     processed_headers=processed_headers,
-                    request_body=self._process_request_body(json, route_config) if json is not None else json,
-                    raw_content_size=len(content) if content else 0,
-                    params=params,
-                    timeout=timeout
+                    processed_body=request_kwargs.get("json"),
+                    content_length=len(str(request_kwargs.get("content", ""))) if request_kwargs.get("content") else 0,
+                    attempt=attempt + 1
                 )
                 
                 self.logger.info(
@@ -243,6 +239,10 @@ class ProxyEngine:
                 remove_headers = json.loads(remove_headers)
             except (json.JSONDecodeError, TypeError):
                 remove_headers = []
+        
+        # 确保remove_headers是列表类型
+        if remove_headers is None:
+            remove_headers = []
         
         for header_name in strip_headers + remove_headers:
             processed_headers.pop(header_name.lower(), None)
@@ -453,19 +453,6 @@ class ProxyEngine:
         # 处理请求头
         processed_headers = self._process_headers(headers or {}, route_config)
         
-        # 详细记录流式请求信息
-        self.logger.info(
-            "=== DETAILED STREAM REQUEST LOG ===",
-            method=method,
-            url=url,
-            request_id=request_id,
-            processed_headers=processed_headers,
-            request_body=self._process_request_body(json, route_config) if json is not None else json,
-            raw_content_size=len(content) if content else 0,
-            params=params,
-            timeout=timeout
-        )
-        
         self.logger.info(
             "Starting stream request with audit cache",
             method=method,
@@ -493,6 +480,18 @@ class ProxyEngine:
             completion_info = {}   # 完整的completion信息
             
             try:
+                # 调试日志：记录改造后的流式请求头和请求体
+                processed_json = self._process_request_body(json, route_config) if json is not None else None
+                self.logger.debug(
+                    "Proxy stream request details",
+                    method=method,
+                    url=url,
+                    processed_headers=processed_headers,
+                    processed_body=processed_json,
+                    content_length=len(str(content)) if content else 0,
+                    request_id=request_id
+                )
+                
                 # 关键：直接在async with中使用client.stream()
                 async with self.client.stream(
                     method=method,
@@ -500,7 +499,7 @@ class ProxyEngine:
                     headers=processed_headers,
                     timeout=timeout,
                     params=params,
-                    json=self._process_request_body(json, route_config) if json is not None else None,
+                    json=processed_json,
                     content=content
                 ) as response:
                     response.raise_for_status()

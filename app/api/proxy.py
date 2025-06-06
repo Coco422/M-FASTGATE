@@ -92,6 +92,9 @@ async def universal_proxy(
         # 路由匹配
         route_match = route_matcher.find_matching_route(request_info, route_dicts)
         
+        # 临时调试：打印路由匹配结果
+        print(f"DEBUG: Route match result: {route_match}")
+        
         if not route_match:
             # 记录未匹配的审计日志（异步）
             await audit_service.log_request_start({
@@ -121,6 +124,10 @@ async def universal_proxy(
         # 构建目标URL
         target_url = proxy_engine.build_target_url(route_match, request_path)
         
+
+        # 临时打印调试信息
+        print(f"DEBUG: original_path={request_path}, target_url={target_url}, route_id={route_match.get('route_id')}")
+        
         # 异步记录请求开始（不等待，不阻塞）
         await audit_service.log_request_start({
             "request_id": request_id,
@@ -142,19 +149,31 @@ async def universal_proxy(
         if isinstance(request_body, dict) and request_body.get("stream") is True:
             is_likely_stream = True
         
+        # 临时调试：打印流式请求判断
+        print(f"DEBUG: request_body type={type(request_body)}, content={request_body}")
+        print(f"DEBUG: stream value={request_body.get('stream') if isinstance(request_body, dict) else 'N/A'}")
+        print(f"DEBUG: is_likely_stream={is_likely_stream}")
+        
         # 检查是否为流式响应 - 提前处理
         if is_likely_stream:
             # 直接使用流式请求方法，传递审计信息
-            return await proxy_engine.forward_stream_request(
-                route_config=route_match,
-                method=request.method,
-                url=target_url,
-                headers=dict(request.headers),
-                json=request_body if isinstance(request_body, dict) else None,
-                content=request_body if isinstance(request_body, bytes) else None,
-                audit_service=audit_service,
-                request_id=request_id
-            )
+            try:
+                print(f"DEBUG: About to call forward_stream_request with url={target_url}")
+                result = await proxy_engine.forward_stream_request(
+                    route_config=route_match,
+                    method=request.method,
+                    url=target_url,
+                    headers=dict(request.headers),
+                    json=request_body if isinstance(request_body, dict) else None,
+                    content=request_body if isinstance(request_body, bytes) else None,
+                    audit_service=audit_service,
+                    request_id=request_id
+                )
+                print(f"DEBUG: forward_stream_request completed successfully")
+                return result
+            except Exception as stream_error:
+                print(f"DEBUG: forward_stream_request failed: {type(stream_error).__name__}: {str(stream_error)}")
+                raise
         
         # 非流式请求的传统处理
         response = await proxy_engine.forward_request(
