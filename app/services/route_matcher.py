@@ -226,11 +226,11 @@ class RouteMatcher:
         escaped = re.escape(route_path)
         
         # 处理通配符
-        # * 匹配单个路径段
+        # * 匹配任意字符（包括斜杠）
         # ** 或 {path:path} 匹配多个路径段
         pattern = escaped
         pattern = pattern.replace(r'\*\*', r'.*')  # ** 匹配任意字符
-        pattern = pattern.replace(r'\*', r'[^/]*')  # * 匹配除/外的任意字符
+        pattern = pattern.replace(r'\*', r'.*')  # * 匹配任意字符（包括斜杠）
         pattern = pattern.replace(r'\{path:path\}', r'.*')  # FastAPI风格路径参数
         
         # 支持路径参数 {param}
@@ -253,16 +253,47 @@ class RouteMatcher:
     
     def _validate_json_schema(self, data: Dict[str, Any], schema: Dict[str, Any]) -> bool:
         """
-        简化的JSON Schema验证
+        简化的JSON Schema验证，支持简单键值对匹配
         
         Args:
             data: 要验证的数据
-            schema: JSON Schema
+            schema: JSON Schema或简单键值对
             
         Returns:
             bool: 是否符合schema
         """
         try:
+            # 如果schema只包含简单的键值对（没有type、properties等JSON Schema关键字）
+            # 则进行简单的键值匹配
+            json_schema_keywords = {"type", "properties", "required", "items", "additionalProperties", "enum", "const"}
+            is_simple_match = not any(key in schema for key in json_schema_keywords)
+            
+            if is_simple_match:
+                # 简单键值对匹配模式
+                if not isinstance(data, dict):
+                    return False
+                
+                for key, expected_value in schema.items():
+                    if key not in data:
+                        self.logger.debug(
+                            "Required field missing for simple match",
+                            field=key
+                        )
+                        return False
+                    
+                    actual_value = data[key]
+                    if actual_value != expected_value:
+                        self.logger.debug(
+                            "Field value mismatch for simple match",
+                            field=key,
+                            expected=expected_value,
+                            actual=actual_value
+                        )
+                        return False
+                
+                return True
+            
+            # 标准JSON Schema验证
             # 检查类型
             expected_type = schema.get("type")
             if expected_type:

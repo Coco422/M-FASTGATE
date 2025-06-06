@@ -297,7 +297,113 @@ curl "http://localhost:8000/admin/logs/export?format=csv&start_time=2024-01-01&e
   -o api_usage_report.csv
 ```
 
-### 案例4：流式API代理
+### 案例4：V2 多模型智能路由
+
+**场景**：根据请求体中的model字段，智能路由到不同的AI服务
+
+#### 1. 配置多模型路由
+```bash
+# 配置 Qwen3-30B 模型路由
+curl -X POST "http://localhost:8514/admin/routes?token=admin_secret_token_dev" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "route_name": "V2 Qwen3-30B Proxy",
+    "description": "V2 代理路由 - 根据model值路由到Qwen3-30B服务",
+    "match_path": "/v2*",
+    "match_method": "POST",
+    "match_body_schema": {"model": "mckj/Qwen3-30B-A3B"},
+    "target_host": "172.16.99.204:3398",
+    "target_path": "/v1/chat/completions",
+    "target_protocol": "http",
+    "add_headers": {
+      "Authorization": "Bearer your-backend-api-key",
+      "X-Proxy-Source": "M-FastGate-v0.2.0"
+    },
+    "priority": 40,
+    "is_active": true
+  }'
+
+# 配置 fallback 路由
+curl -X POST "http://localhost:8514/admin/routes?token=admin_secret_token_dev" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "route_name": "V2 Fallback Proxy",
+    "description": "V2 fallback路由 - 处理其他model值的请求",
+    "match_path": "/v2*",
+    "match_method": "POST",
+    "target_host": "172.16.99.32:8516",
+    "target_path": "/v1/chat/completions",
+    "priority": 80,
+    "is_active": true
+  }'
+```
+
+#### 2. 客户端调用示例
+```python
+import httpx
+import asyncio
+
+async def test_v2_routing():
+    """测试V2智能路由功能"""
+    async with httpx.AsyncClient() as client:
+        
+        # 使用 Qwen3-30B 模型 - 路由到 172.16.99.204:3398
+        response1 = await client.post(
+            "http://localhost:8514/v2/chat/completions",
+            headers={
+                "Authorization": "Bearer fg_your_api_key",
+                "Content-Type": "application/json"
+            },
+            json={
+                "model": "mckj/Qwen3-30B-A3B",
+                "messages": [{"role": "user", "content": "Hello"}],
+                "max_tokens": 100
+            }
+        )
+        
+        # 使用其他模型 - 路由到 fallback 服务
+        response2 = await client.post(
+            "http://localhost:8514/v2/chat/completions",
+            headers={
+                "Authorization": "Bearer fg_your_api_key",
+                "Content-Type": "application/json"
+            },
+            json={
+                "model": "other-model",
+                "messages": [{"role": "user", "content": "Hello"}],
+                "max_tokens": 100
+            }
+        )
+
+# 流式请求示例
+async def test_v2_streaming():
+    """测试V2流式响应"""
+    async with httpx.AsyncClient() as client:
+        async with client.stream(
+            "POST",
+            "http://localhost:8514/v2/chat/completions",
+            headers={
+                "Authorization": "Bearer fg_your_api_key",
+                "Content-Type": "application/json"
+            },
+            json={
+                "model": "mckj/Qwen3-30B-A3B",
+                "messages": [{"role": "user", "content": "讲个故事"}],
+                "stream": True
+            }
+        ) as response:
+            async for line in response.aiter_lines():
+                if line.startswith("data: "):
+                    print(line[6:])
+```
+
+#### 3. 路由规则说明
+- **优先级匹配**：系统按priority从低到高匹配路由
+- **请求体匹配**：根据`match_body_schema`精确匹配model字段
+- **Fallback机制**：无匹配规则时使用fallback路由
+- **保持兼容**：与v1路由完全兼容，客户端无需修改
+
+### 案例5：流式API代理
 
 **场景**：代理支持流式响应的AI服务
 
