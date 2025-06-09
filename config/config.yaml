@@ -5,10 +5,12 @@ app:
   version: "0.2.0"
   host: "0.0.0.0"
   port: 8514
-  debug: true
+  debug: false
 
 database:
-  url: "sqlite:///./app/data/fastgate.db"
+  # 容器内路径: /app/data/fastgate.db
+  # 宿主机路径: ./data/fastgate.db (通过volume挂载)
+  url: "sqlite:///./data/fastgate.db"
   echo: false
 
 security:
@@ -19,6 +21,8 @@ security:
 logging:
   level: "INFO"
   format: "json"
+  # 容器内路径: /app/logs/fastgate.log
+  # 宿主机路径: ./logs/fastgate.log (通过volume挂载)
   file: "logs/fastgate.log"
 
 rate_limiting:

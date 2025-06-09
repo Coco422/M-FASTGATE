@@ -1,29 +1,29 @@
-version: '3.8'
-
 services:
   m-fastgate:
-    build:
-      context: .
-      dockerfile: Dockerfile
-      platforms:
-        - linux/arm64
+    image: m-fastgate:arm64-latest
     container_name: m-fastgate
     restart: unless-stopped
     ports:
       - "8514:8514"
     volumes:
-      # 数据库持久化
-      - ./data:/app/data
-      # 日志持久化
-      - ./logs:/app/logs
-      # 配置文件挂载
-      - ./config:/app/config:ro
+      # 数据库持久化 (宿主机:容器) - 使用bind mount
+      - type: bind
+        source: ./data
+        target: /app/data
+      # 日志持久化 (宿主机:容器) - 使用bind mount
+      - type: bind
+        source: ./logs
+        target: /app/logs
+      # 配置文件挂载 (宿主机:容器) - 使用bind mount
+      - type: bind
+        source: ./config
+        target: /app/config
+        read_only: true
     environment:
       - ENVIRONMENT=production
       - PYTHONUNBUFFERED=1
     networks:
       - fastgate-network
-    platform: linux/arm64
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8514/health"]
       interval: 30s

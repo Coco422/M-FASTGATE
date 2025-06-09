@@ -35,7 +35,7 @@ class Config:
                 "debug": True
             },
             "database": {
-                "url": "sqlite:///./app/data/fastgate.db",
+                "url": "sqlite:///./data/fastgate.db",
                 "echo": False
             },
             "security": {
