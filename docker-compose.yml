@@ -1,6 +1,6 @@
 services:
   m-fastgate:
-    image: m-fastgate:arm64-latest
+    image: m-fastgate:latest
     container_name: m-fastgate
     restart: unless-stopped
     ports:

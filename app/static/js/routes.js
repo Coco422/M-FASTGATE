@@ -32,22 +32,23 @@ function initializeEventListeners() {
 
 // 加载路由列表
 async function loadRoutes() {
+    const tableBody = document.getElementById('routesTableBody');
     try {
         showLoading('routesTableBody');
         
-        const response = await fetch(`/admin/routes?token=${getAdminToken()}`);
+        const response = await apiClient.get('/routes');
         
         if (response.ok) {
             routes = await response.json();
             renderRoutesTable();
             updateRouteStats();
         } else {
-            const error = await response.json();
-            showError('加载路由列表失败: ' + (error.detail || '未知错误'));
+            const errorText = await response.text();
+            showErrorInTable('routesTableBody', `加载路由列表失败: ${response.status} ${errorText}`, 7);
         }
     } catch (error) {
         console.error('加载路由列表错误:', error);
-        showError('网络连接错误，请检查网络后重试');
+        showErrorInTable('routesTableBody', '加载路由列表时发生网络错误，请检查您的连接。', 7);
     }
 }
 
@@ -141,7 +142,7 @@ function updateRouteStats() {
 // 加载路由统计数据
 async function loadRouteStats() {
     try {
-        const response = await fetch(`/admin/metrics?token=${getAdminToken()}`);
+        const response = await apiClient.get('/metrics');
         
         if (response.ok) {
             const metrics = await response.json();
@@ -327,29 +328,24 @@ async function saveRoute() {
         data.add_body_fields = null;
     }
 
+    const method = isEditMode ? 'PUT' : 'POST';
+    const endpoint = isEditMode ? `/routes/${currentRoute.route_id}` : '/routes';
+
     try {
-        const url = isEditMode ? `/admin/routes/${currentRoute.route_id}?token=${getAdminToken()}` : `/admin/routes?token=${getAdminToken()}`;
-        const method = isEditMode ? 'PUT' : 'POST';
-        
-        const response = await fetch(url, {
-            method: method,
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify(data)
-        });
+        const response = await apiClient[method.toLowerCase()](endpoint, data);
         
         if (response.ok) {
-            showSuccess(isEditMode ? '路由更新成功' : '路由创建成功');
-            bootstrap.Modal.getInstance(document.getElementById('routeModal')).hide();
-            loadRoutes(); // 重新加载路由列表
+            showSuccess(`路由已成功${isEditMode ? '更新' : '创建'}`);
+            const modal = bootstrap.Modal.getInstance(document.getElementById('routeModal'));
+            modal.hide();
+            loadRoutes();
         } else {
             const error = await response.json();
-            showError(error.detail || '操作失败');
+            showError(`保存路由失败: ${error.detail || '未知错误'}`);
         }
     } catch (error) {
         console.error('保存路由错误:', error);
-        showError('网络连接错误，请重试');
+        showError('保存路由时发生网络错误');
     }
 }
 
@@ -401,22 +397,16 @@ async function testRouteById(routeId) {
 
 // 执行路由测试
 async function performRouteTest(routeId, testData) {
+    showLoading('testResultBody');
     try {
-        showInfo('正在测试路由配置...');
-        
-        const response = await fetch(`/admin/routes/${routeId}/test?token=${getAdminToken()}`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify(testData)
-        });
-        
+        const endpoint = routeId ? `/routes/${routeId}/test` : '/routes/test';
+        const response = await apiClient.post(endpoint, testData);
+
         const result = await response.json();
         showTestResult(result);
     } catch (error) {
         console.error('测试路由错误:', error);
-        showError('测试失败: ' + error.message);
+        showError('testResultBody', '测试路由时发生网络错误');
     }
 }
 
@@ -588,54 +578,40 @@ function editRouteFromDetail() {
 // 切换路由状态
 async function toggleRoute(routeId, isActive) {
     try {
-        const response = await fetch(`/admin/routes/${routeId}/toggle?token=${getAdminToken()}`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({is_active: isActive})
-        });
+        const response = await apiClient.put(`/routes/${routeId}/toggle`, { is_active: isActive });
         
         if (response.ok) {
             showSuccess(`路由已${isActive ? '启用' : '禁用'}`);
             loadRoutes();
         } else {
             const error = await response.json();
-            showError(error.detail || '操作失败');
+            showError(`操作失败: ${error.detail}`);
         }
     } catch (error) {
         console.error('切换路由状态错误:', error);
-        showError('网络连接错误，请重试');
+        showError('切换路由状态时发生网络错误');
     }
 }
 
 // 删除路由
 async function deleteRoute(routeId) {
-    const route = routes.find(r => r.route_id === routeId);
-    if (!route) {
-        showError('路由不存在');
+    if (!confirm('确定要删除此路由吗？此操作不可撤销。')) {
         return;
     }
-    
-    if (!confirm(`确定要删除路由"${route.route_name}"吗？此操作不可恢复。`)) {
-        return;
-    }
-    
+
     try {
-        const response = await fetch(`/admin/routes/${routeId}?token=${getAdminToken()}`, {
-            method: 'DELETE'
-        });
-        
+        const response = await apiClient.delete(`/routes/${routeId}`);
+
         if (response.ok) {
-            showSuccess('路由删除成功');
+            showSuccess('路由已删除');
             loadRoutes();
         } else {
             const error = await response.json();
-            showError(error.detail || '删除失败');
+            showError(`删除失败: ${error.detail}`);
         }
     } catch (error) {
         console.error('删除路由错误:', error);
-        showError('网络连接错误，请重试');
+        showError('删除路由时发生网络错误');
     }
 }
 
@@ -698,16 +674,43 @@ function escapeHtml(text) {
 // 工具函数 - 显示加载中
 function showLoading(elementId) {
     const element = document.getElementById(elementId);
-    if (element) {
+    if (!element) return;
+    
+    // 如果是tbody，则创建带colspan的加载行
+    if (element.tagName.toLowerCase() === 'tbody') {
+        const colCount = element.previousElementSibling.rows[0].cells.length || 1;
         element.innerHTML = `
             <tr>
-                <td colspan="7" class="text-center text-muted py-4">
-                    <i class="fas fa-spinner fa-spin fa-2x mb-2"></i>
-                    <br>
-                    加载中...
+                <td colspan="${colCount}" class="text-center text-muted py-4">
+                    <div class="spinner-border spinner-border-sm" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                    <span class="ms-2">加载中...</span>
                 </td>
             </tr>
         `;
+    } else {
+        element.innerHTML = '加载中...';
+    }
+}
+
+// 在表格中显示错误信息
+function showErrorInTable(elementId, message, colspan = 1) {
+    const element = document.getElementById(elementId);
+    if (!element) return;
+    
+    if (element.tagName.toLowerCase() === 'tbody') {
+        element.innerHTML = `
+            <tr>
+                <td colspan="${colspan}" class="text-center text-danger py-4">
+                    <i class="fas fa-exclamation-triangle fa-2x mb-2"></i>
+                    <br>
+                    ${escapeHtml(message)}
+                </td>
+            </tr>
+        `;
+    } else {
+        element.innerHTML = `<div class="text-danger">${escapeHtml(message)}</div>`;
     }
 }
 

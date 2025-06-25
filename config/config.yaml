@@ -10,7 +10,7 @@ app:
 database:
   # 容器内路径: /app/data/fastgate.db
   # 宿主机路径: ./data/fastgate.db (通过volume挂载)
-  url: "sqlite:///./data/fastgate.db"
+  url: "sqlite:///./app/data/fastgate.db"
   echo: false
 
 security:

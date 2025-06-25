@@ -26,11 +26,13 @@ async def admin_dashboard(
     """
     管理面板首页
     """
+    root_path = request.scope.get("root_path", "")
     return templates.TemplateResponse("dashboard.html", {
         "request": request,
         "title": "M-FastGate 管理面板",
         "gateway_url": f"http://{request.client.host}:8514",
-        "api_base": "/admin"
+        "api_base": f"{root_path}/admin",
+        "root_path": root_path,
     })
 
 
@@ -42,10 +44,12 @@ async def api_keys_page(
     """
     API Key 管理页面
     """
+    root_path = request.scope.get("root_path", "")
     return templates.TemplateResponse("api_keys.html", {
         "request": request,
         "title": "API Key 管理",
-        "api_base": "/admin"
+        "api_base": f"{root_path}/admin",
+        "root_path": root_path,
     })
 
 
@@ -57,10 +61,12 @@ async def proxy_routes_page(
     """
     代理路由配置页面
     """
+    root_path = request.scope.get("root_path", "")
     return templates.TemplateResponse("routes.html", {
         "request": request,
         "title": "代理路由配置",
-        "api_base": "/admin"
+        "api_base": f"{root_path}/admin",
+        "root_path": root_path,
     })
 
 
@@ -72,10 +78,12 @@ async def audit_logs_page(
     """
     审计日志页面
     """
+    root_path = request.scope.get("root_path", "")
     return templates.TemplateResponse("audit_logs.html", {
         "request": request,
         "title": "审计日志",
-        "api_base": "/admin"
+        "api_base": f"{root_path}/admin",
+        "root_path": root_path,
     })
 
 

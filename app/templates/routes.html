@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 
 {% block breadcrumb_items %}
-<li class="breadcrumb-item"><a href="/admin/ui/">管理面板</a></li>
+<li class="breadcrumb-item"><a href="{{ root_path }}/admin/ui/">管理面板</a></li>
 <li class="breadcrumb-item active">代理路由配置</li>
 {% endblock %}
 
@@ -375,5 +375,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="/admin/ui/static/js/routes.js"></script>
+<script src="{{ root_path }}/admin/ui/static/js/routes.js"></script>
 {% endblock %} 

@@ -43,7 +43,8 @@ app = FastAPI(
     version=settings.app["version"],
     description="一个基于FastAPI的轻量级网关系统",
     debug=settings.app["debug"],
-    lifespan=lifespan
+    lifespan=lifespan,
+    root_path="/ai-fg"
 )
 
 # 添加CORS中间件

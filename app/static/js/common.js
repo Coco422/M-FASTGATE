@@ -11,7 +11,7 @@ let apiClient = null;
  */
 class APIClient {
     constructor() {
-        this.baseURL = '/admin';
+        this.baseURL = window.apiBaseUrl || '/admin';
     }
     
     // 获取完整的API URL（包含token）
@@ -113,15 +113,19 @@ class APIClient {
 /**
  * 页面加载完成后的初始化
  */
+
+// 立即初始化API客户端，因为它不依赖于DOM，且其他脚本需要立即使用它
+// 它依赖于在base.html中设置的全局变量 window.apiBaseUrl
+initializeApiClient();
+initTokenManagement();
+
 $(document).ready(function() {
-    console.log('Common.js initializing...'); // 调试日志
+    console.log('Common.js DOM ready...');
     
-    initTokenManagement();
     updateLinksWithToken();
-    initializeApiClient();
     setActiveNavigation();
     
-    console.log('Common.js initialized. apiClient:', apiClient); // 调试日志
+    console.log('Common.js DOM ready setup complete.');
 });
 
 /**
@@ -157,15 +161,17 @@ function initializeApiClient() {
 function updateLinksWithToken() {
     if (!adminToken) return;
     
+    const uiPrefix = (window.rootPath || '') + '/admin/ui/';
+
     // 更新导航链接
-    $('a[href^="/admin/ui/"]').each(function() {
+    $('a[href^="' + uiPrefix + '"]').each(function() {
         const href = $(this).attr('href');
         const newHref = addTokenToUrl(href);
         $(this).attr('href', newHref);
     });
     
     // 更新表单action（如果有的话）
-    $('form[action^="/admin/ui/"]').each(function() {
+    $('form[action^="' + uiPrefix + '"]').each(function() {
         const action = $(this).attr('action');
         const newAction = addTokenToUrl(action);
         $(this).attr('action', newAction);
@@ -177,9 +183,11 @@ function updateLinksWithToken() {
  */
 function setActiveNavigation() {
     const currentPath = window.location.pathname;
+    const uiPrefix = (window.rootPath || '') + '/admin/ui/';
+
     document.querySelectorAll('.navbar-nav .nav-link').forEach(link => {
         const href = link.getAttribute('href');
-        if (href && href.startsWith('/admin/ui/')) {
+        if (href && href.startsWith(uiPrefix)) {
             // 移除token参数后比较
             const linkPath = href.split('?')[0];
             if (linkPath === currentPath) {
