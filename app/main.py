@@ -1,5 +1,5 @@
 """
-M-FastGate v0.2.0 FastAPI 应用入口
+M-FastGate v0.3.0 FastAPI 应用入口
 """
 
 from datetime import datetime
@@ -84,7 +84,7 @@ async def root():
     return {
         "name": settings.app["name"],
         "version": settings.app["version"],
-        "description": "M-FastGate v0.2.0 通用代理网关",
+        "description": "M-FastGate v0.3.0 通用代理网关",
         "docs_url": "/docs",
         "health_url": "/health",
         "admin_prefix": "/admin",
