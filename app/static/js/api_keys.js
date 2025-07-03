@@ -405,7 +405,7 @@ class ApiKeysManager {
             return;
         }
         
-        const response = await apiClient.put(`/keys/${keyId}`, keyData);
+        const response = await apiClient.post(`/keys/update/${keyId}`, keyData);
         
         if (response.ok) {
             showAlert('API Key更新成功！', 'success');
@@ -423,7 +423,7 @@ class ApiKeysManager {
         }
         
         try {
-            const response = await apiClient.delete(`/keys/${keyId}`);
+            const response = await apiClient.post(`/keys/delete/${keyId}`);
             
             if (response.ok) {
                 showAlert('API Key删除成功！', 'success');

@@ -11,7 +11,7 @@ from ..middleware.auth import verify_admin_token
 from ..services.key_manager import KeyManager
 from ..services.audit_service import AuditService
 from ..models.api_key import APIKeyCreate, APIKeyUpdate, APIKeyResponse
-from ..models.proxy_route import ProxyRouteCreate, ProxyRouteUpdate, ProxyRouteResponse
+from ..models.proxy_route import ProxyRouteCreate, ProxyRouteDB, ProxyRouteUpdate, ProxyRouteResponse
 from ..models.audit_log import AuditLogResponse
 from ..config import settings
 
@@ -68,7 +68,7 @@ async def get_api_key(
     return api_key
 
 
-@router.put("/keys/{key_id}")
+@router.post("/keys/update/{key_id}")
 async def update_api_key(
     key_id: str,
     key_data: APIKeyUpdate,
@@ -88,7 +88,7 @@ async def update_api_key(
     return api_key
 
 
-@router.delete("/keys/{key_id}")
+@router.post("/keys/delete/{key_id}")
 async def delete_api_key(
     key_id: str,
     db: Session = Depends(get_db),
@@ -206,7 +206,7 @@ async def get_proxy_route(
     return convert_db_route_to_response(route)
 
 
-@router.put("/routes/{route_id}")
+@router.post("/routes/update/{route_id}")
 async def update_proxy_route(
     route_id: str,
     route_data: ProxyRouteUpdate,
@@ -286,7 +286,7 @@ def convert_db_route_to_response(db_route: 'ProxyRouteDB') -> ProxyRouteResponse
     )
 
 
-@router.delete("/routes/{route_id}")
+@router.post("/routes/delete/{route_id}")
 async def delete_proxy_route(
     route_id: str,
     db: Session = Depends(get_db),

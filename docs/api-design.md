@@ -151,23 +151,16 @@ Authorization: Bearer {admin_token}
 **路径参数**:
 - `key_id`: str - API Key ID
 
-##### PUT /admin/keys/{key_id}
-**描述**: 更新API Key  
-**认证**: Admin Token  
-**请求体**:
-```json
-{
-    "source_path": "string",           // 可选
-    "permissions": ["string"],         // 可选
-    "expires_at": "2025-06-06T04:00:00.000Z", // 可选
-    "is_active": true,                 // 可选
-    "rate_limit": 2000                 // 可选
-}
-```
+##### POST /admin/keys/update/{key_id}
+**描述**: 更新一个已存在的API Key。可以更新其来源路径、描述和过期时间。
+**请求体**: `APIKeyUpdate` 模型。
+**响应**: `200 OK` 返回更新后的 `APIKeyResponse` 模型。
+**错误**: `404 Not Found` 如果Key不存在。
 
-##### DELETE /admin/keys/{key_id}
-**描述**: 删除API Key  
-**认证**: Admin Token  
+##### POST /admin/keys/delete/{key_id}
+**描述**: 删除一个API Key。
+**响应**: `200 OK` 返回成功消息。
+**错误**: `404 Not Found` 如果Key不存在。
 
 #### 代理路由配置管理
 
@@ -232,14 +225,16 @@ Authorization: Bearer {admin_token}
 **描述**: 获取单个代理路由配置详情  
 **认证**: Admin Token  
 
-##### PUT /admin/routes/{route_id}
-**描述**: 更新代理路由配置  
-**认证**: Admin Token  
-**请求体**: 同POST /admin/routes，所有字段可选
+##### POST /admin/routes/update/{route_id}
+**描述**: 更新一个代理路由配置。
+**请求体**: `ProxyRouteUpdate` 模型。
+**响应**: `200 OK` 返回更新后的 `ProxyRouteResponse` 模型。
+**错误**: `404 Not Found` 如果路由不存在。
 
-##### DELETE /admin/routes/{route_id}
-**描述**: 删除代理路由配置  
-**认证**: Admin Token  
+##### POST /admin/routes/delete/{route_id}
+**描述**: 删除一个代理路由。
+**响应**: `200 OK` 返回成功消息。
+**错误**: `404 Not Found` 如果路由不存在。
 
 ##### POST /admin/routes/{route_id}/toggle
 **描述**: 切换路由启用/禁用状态  

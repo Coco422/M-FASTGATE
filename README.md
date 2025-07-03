@@ -97,9 +97,19 @@ Content-Type: application/json
 GET /admin/keys?source_path=openai-proxy&is_active=true
 ```
 
-#### 删除API密钥
+#### 获取单个API Key详情
 ```http
-DELETE /admin/keys/{key_id}
+GET /admin/keys/{key_id}
+```
+
+#### 更新API Key
+```http
+POST /admin/keys/update/{key_id}
+```
+
+#### 删除API Key
+```http
+POST /admin/keys/delete/{key_id}
 ```
 
 ### 3. 代理路由管理
@@ -124,14 +134,34 @@ Content-Type: application/json
 }
 ```
 
-#### 路由列表和管理
+#### 获取所有代理路由列表
 ```http
-GET /admin/routes                    # 获取所有路由
-GET /admin/routes/{route_id}         # 获取单个路由
-PUT /admin/routes/{route_id}         # 更新路由
-DELETE /admin/routes/{route_id}      # 删除路由
-POST /admin/routes/{route_id}/toggle # 启用/禁用路由
-POST /admin/routes/{route_id}/test   # 测试路由连通性
+GET /admin/routes
+```
+
+#### 获取单个路由详情
+```http
+GET /admin/routes/{route_id}
+```
+
+#### 更新路由
+```http
+POST /admin/routes/update/{route_id}
+```
+
+#### 删除路由
+```http
+POST /admin/routes/delete/{route_id}
+```
+
+#### 切换路由状态 (启用/禁用)
+```http
+POST /admin/routes/{route_id}/toggle
+```
+
+#### 测试路由配置
+```http
+POST /admin/routes/{route_id}/test
 ```
 
 ### 4. 审计日志查询
