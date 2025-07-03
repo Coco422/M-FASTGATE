@@ -71,43 +71,6 @@ class APIClient {
         
         return response;
     }
-    
-    async put(endpoint, data) {
-        const url = this.getApiUrl(endpoint);
-        console.log('API PUT:', url, data); // 调试日志
-        
-        const response = await fetch(url, {
-            method: 'PUT',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(data)
-        });
-        
-        if (!response.ok) {
-            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-        }
-        
-        return response;
-    }
-    
-    async delete(endpoint) {
-        const url = this.getApiUrl(endpoint);
-        console.log('API DELETE:', url); // 调试日志
-        
-        const response = await fetch(url, {
-            method: 'DELETE',
-            headers: {
-                'Content-Type': 'application/json',
-            }
-        });
-        
-        if (!response.ok) {
-            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-        }
-        
-        return response;
-    }
 }
 
 /**

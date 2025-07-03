@@ -328,11 +328,11 @@ async function saveRoute() {
         data.add_body_fields = null;
     }
 
-    const method = isEditMode ? 'PUT' : 'POST';
-    const endpoint = isEditMode ? `/routes/${currentRoute.route_id}` : '/routes';
+    const method = isEditMode ? 'POST' : 'POST';
+    const endpoint = isEditMode ? `/routes/update/${currentRoute.route_id}` : '/routes';
 
     try {
-        const response = await apiClient[method.toLowerCase()](endpoint, data);
+        const response = await apiClient.post(endpoint, data);
         
         if (response.ok) {
             showSuccess(`路由已成功${isEditMode ? '更新' : '创建'}`);
@@ -578,7 +578,7 @@ function editRouteFromDetail() {
 // 切换路由状态
 async function toggleRoute(routeId, isActive) {
     try {
-        const response = await apiClient.put(`/routes/${routeId}/toggle`, { is_active: isActive });
+        const response = await apiClient.post(`/routes/${routeId}/toggle`, { is_active: isActive });
         
         if (response.ok) {
             showSuccess(`路由已${isActive ? '启用' : '禁用'}`);
@@ -600,7 +600,7 @@ async function deleteRoute(routeId) {
     }
 
     try {
-        const response = await apiClient.delete(`/routes/${routeId}`);
+        const response = await apiClient.post(`/routes/delete/${routeId}`);
 
         if (response.ok) {
             showSuccess('路由已删除');
