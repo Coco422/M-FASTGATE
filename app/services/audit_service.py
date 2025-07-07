@@ -310,11 +310,10 @@ class AuditService:
                     query = query.filter(AuditLogDB.is_stream == is_stream)
                 
                 # 排序、分页
-                total = query.count()
                 results = query.order_by(AuditLogDB.request_time.desc()).offset(offset).limit(limit).all()
 
                 # 转换为响应模型
-                return [self._to_response(row.AuditLogDB, row.api_key_source_path) for row in results]
+                return [self._to_response(row[0], row.api_key_source_path) for row in results]
             
             finally:
                 db.close()
