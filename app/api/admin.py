@@ -49,6 +49,19 @@ async def list_api_keys(
     return key_manager.list_keys(skip=skip, limit=limit, source_path=source_path, is_active=is_active)
 
 
+@router.get("/keys/sources")
+async def list_key_sources(
+    db: Session = Depends(get_db),
+    token: str = Depends(verify_admin_token)
+) -> List[str]:
+    """
+    获取所有唯一的 API Key 来源路径
+    """
+    from ..models.api_key import APIKeyDB
+    sources = db.query(APIKeyDB.source_path).distinct().all()
+    return [source[0] for source in sources if source[0]]
+
+
 @router.get("/keys/{key_id}")
 async def get_api_key(
     key_id: str,
@@ -465,6 +478,7 @@ async def get_audit_logs(
     skip: int = Query(0, ge=0, description="跳过的记录数"),
     limit: int = Query(50, ge=1, le=10000, description="返回的记录数"),
     api_key: Optional[str] = Query(None, description="按 API Key 过滤"),
+    caller: Optional[str] = Query(None, description="按调用者名称过滤"),
     source_path: Optional[str] = Query(None, description="按来源路径过滤"),
     method: Optional[str] = Query(None, description="按请求方法过滤"),
     path: Optional[str] = Query(None, description="按请求路径过滤"),
@@ -483,6 +497,7 @@ async def get_audit_logs(
         offset=skip, 
         limit=limit,
         api_key=api_key,
+        caller=caller,
         source_path=source_path,
         method=method,
         status_code=status_code,
@@ -650,6 +665,15 @@ async def get_metrics(
         func.count(AuditLogDB.source_path).label('count')
     ).group_by(AuditLogDB.source_path).order_by(func.count(AuditLogDB.source_path).desc()).limit(5).all()
     
+    # 获取TOP API Key 调用者
+    top_api_keys = db.query(
+        APIKeyDB.source_path,
+        func.count(AuditLogDB.id).label('count')
+    ).join(APIKeyDB, AuditLogDB.api_key == APIKeyDB.key_value)\
+     .group_by(APIKeyDB.source_path)\
+     .order_by(func.count(AuditLogDB.id).desc())\
+     .limit(5).all()
+
     # 状态码分布
     status_distribution = {}
     status_stats = db.query(
@@ -671,6 +695,7 @@ async def get_metrics(
         "active_routes": active_routes,
         "top_paths": [{"path": path, "count": count} for path, count in top_paths],
         "top_source_paths": [{"source_path": source_path, "count": count} for source_path, count in top_source_paths],
+        "top_api_keys": [{"source_path": path, "count": count} for path, count in top_api_keys],
         "status_distribution": status_distribution
     }
 

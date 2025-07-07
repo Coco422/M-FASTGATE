@@ -7,11 +7,12 @@ import asyncio
 import json
 from datetime import datetime, timezone, timedelta
 from typing import List, Optional, Dict, Any
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from ..models.audit_log import (
     AuditLogDB, AuditLogCreate, AuditLogResponse,
     generate_log_id, generate_request_id
 )
+from ..models.api_key import APIKeyDB  # 导入 APIKeyDB
 from ..database import get_db
 from ..config import settings
 import structlog
@@ -270,6 +271,7 @@ class AuditService:
     def get_logs(
         self,
         api_key: Optional[str] = None,
+        caller: Optional[str] = None,
         source_path: Optional[str] = None,
         method: Optional[str] = None,
         status_code: Optional[int] = None,
@@ -279,55 +281,47 @@ class AuditService:
         limit: int = 100,
         offset: int = 0
     ) -> List[AuditLogResponse]:
-        """
-        查询审计日志
-        
-        Args:
-            api_key: 过滤 API Key
-            source_path: 过滤来源路径
-            method: 过滤请求方法
-            status_code: 过滤状态码
-            start_time: 开始时间
-            end_time: 结束时间
-            is_stream: 过滤流式响应
-            limit: 限制数量
-            offset: 偏移量
-        
-        Returns:
-            List[AuditLogResponse]: 日志列表
-        """
-        db = next(get_db())
+        """获取审计日志列表 - 关联API Key的source_path"""
         try:
-            query = db.query(AuditLogDB)
-            
-            # 添加过滤条件
-            if api_key:
-                query = query.filter(AuditLogDB.api_key == api_key)
-            
-            if source_path:
-                query = query.filter(AuditLogDB.source_path == source_path)
-            
-            if method:
-                query = query.filter(AuditLogDB.method == method)
-            
-            if status_code:
-                query = query.filter(AuditLogDB.status_code == status_code)
-            
-            if start_time:
-                query = query.filter(AuditLogDB.request_time >= start_time)
-            
-            if end_time:
-                query = query.filter(AuditLogDB.request_time <= end_time)
+            db = next(get_db())
+            try:
+                # 查询 AuditLogDB 和 APIKeyDB.source_path
+                query = db.query(AuditLogDB, APIKeyDB.source_path.label("api_key_source_path"))
+
+                # 使用 outerjoin 关联 APIKeyDB
+                query = query.outerjoin(APIKeyDB, AuditLogDB.api_key == APIKeyDB.key_value)
                 
-            if is_stream is not None:
-                query = query.filter(AuditLogDB.is_stream == is_stream)
+                # 过滤条件
+                if api_key:
+                    query = query.filter(AuditLogDB.api_key.ilike(f"%{api_key}%"))
+                if caller:
+                    query = query.filter(APIKeyDB.source_path.ilike(f"%{caller}%"))
+                if source_path:
+                    query = query.filter(AuditLogDB.source_path.ilike(f"%{source_path}%"))
+                if method:
+                    query = query.filter(AuditLogDB.method == method)
+                if status_code:
+                    query = query.filter(AuditLogDB.status_code == status_code)
+                if start_time:
+                    query = query.filter(AuditLogDB.request_time >= start_time)
+                if end_time:
+                    query = query.filter(AuditLogDB.request_time <= end_time)
+                if is_stream is not None:
+                    query = query.filter(AuditLogDB.is_stream == is_stream)
+                
+                # 排序、分页
+                total = query.count()
+                results = query.order_by(AuditLogDB.request_time.desc()).offset(offset).limit(limit).all()
+
+                # 转换为响应模型
+                return [self._to_response(row.AuditLogDB, row.api_key_source_path) for row in results]
             
-            # 排序和分页
-            db_logs = query.order_by(AuditLogDB.request_time.desc()).offset(offset).limit(limit).all()
-            
-            return [self._to_response(db_log) for db_log in db_logs]
-        finally:
-            db.close()
+            finally:
+                db.close()
+                
+        except Exception as e:
+            self.logger.error("Failed to get audit logs", error=str(e))
+            return []
     
     def get_log_by_request_id(self, request_id: str) -> Optional[AuditLogResponse]:
         """
@@ -476,40 +470,63 @@ class AuditService:
             self.logger.warning("Failed to serialize body", error=str(e))
             return None
     
-    def _to_response(self, db_log: AuditLogDB) -> AuditLogResponse:
-        """
-        转换数据库记录为响应模型
-        
-        Args:
-            db_log: 数据库记录
-            
-        Returns:
-            AuditLogResponse: 响应模型
-        """
-        return AuditLogResponse(
-            id=db_log.id,
-            request_id=db_log.request_id,
-            api_key=db_log.api_key,
-            source_path=db_log.source_path,
-            method=db_log.method,
-            path=db_log.path,
-            target_url=db_log.target_url,
-            status_code=db_log.status_code,
-            request_time=db_log.request_time,
-            first_response_time=db_log.first_response_time,
-            response_time=db_log.response_time,
-            response_time_ms=db_log.response_time_ms,
-            request_size=db_log.request_size,
-            response_size=db_log.response_size,
-            user_agent=db_log.user_agent,
-            ip_address=db_log.ip_address,
-            is_stream=db_log.is_stream,
-            stream_chunks=db_log.stream_chunks,
-            error_message=db_log.error_message,
-            request_headers=db_log.request_headers,
-            request_body=db_log.request_body,
-            response_headers=db_log.response_headers,
-            response_body=db_log.response_body,
-            created_at=db_log.created_at
-        )
+    def _to_response(self, db_log: AuditLogDB, api_key_source_path: Optional[str] = None) -> AuditLogResponse:
+        """将数据库模型转换为响应模型"""
+        log_data = {
+            "id": db_log.id,
+            "request_id": db_log.request_id,
+            "api_key": db_log.api_key,
+            "api_key_source_path": api_key_source_path,  # 填充 API Key source_path
+            "source_path": db_log.source_path,
+            "method": db_log.method,
+            "path": db_log.path,
+            "target_url": db_log.target_url,
+            "status_code": db_log.status_code,
+            "request_time": db_log.request_time,
+            "first_response_time": db_log.first_response_time,
+            "response_time": db_log.response_time,
+            "response_time_ms": db_log.response_time_ms,
+            "request_size": db_log.request_size,
+            "response_size": db_log.response_size,
+            "user_agent": db_log.user_agent,
+            "ip_address": db_log.ip_address,
+            "is_stream": db_log.is_stream,
+            "stream_chunks": db_log.stream_chunks,
+            "error_message": db_log.error_message,
+            "request_headers": db_log.request_headers,
+            "request_body": db_log.request_body,
+            "response_headers": db_log.response_headers,
+            "response_body": db_log.response_body,
+            "created_at": db_log.created_at
+        }
+        return AuditLogResponse(**log_data)
+    
+    def _to_dict(self, db_log: AuditLogDB) -> Dict[str, Any]:
+        """将数据库模型转换为字典"""
+        return {
+            "id": db_log.id,
+            "request_id": db_log.request_id,
+            "api_key": db_log.api_key,
+            "source_path": db_log.source_path,
+            "method": db_log.method,
+            "path": db_log.path,
+            "target_url": db_log.target_url,
+            "status_code": db_log.status_code,
+            "request_time": db_log.request_time,
+            "first_response_time": db_log.first_response_time,
+            "response_time": db_log.response_time,
+            "response_time_ms": db_log.response_time_ms,
+            "request_size": db_log.request_size,
+            "response_size": db_log.response_size,
+            "user_agent": db_log.user_agent,
+            "ip_address": db_log.ip_address,
+            "is_stream": db_log.is_stream,
+            "stream_chunks": db_log.stream_chunks,
+            "error_message": db_log.error_message,
+            "request_headers": db_log.request_headers,
+            "request_body": db_log.request_body,
+            "response_headers": db_log.response_headers,
+            "response_body": db_log.response_body,
+            "created_at": db_log.created_at
+        }
  

@@ -60,6 +60,7 @@ class AuditLogsManager {
         this.autoRefreshInterval = null;
         this.filters = {
             api_key: '',
+            caller: '',
             method: '',
             status_code: '',
             source_path: '',
@@ -74,6 +75,7 @@ class AuditLogsManager {
         this.loadLogs();
         this.setupEventListeners();
         this.updateStats();
+        this.loadKeySources();
     }
     
     setupEventListeners() {
@@ -87,7 +89,7 @@ class AuditLogsManager {
         });
         
         // 过滤器变化
-        $('#apiKeyFilter, #methodFilter, #statusFilter, #sourcePathFilter, #timeRangeFilter').on('change', () => {
+        $('#apiKeyFilter, #callerFilter, #methodFilter, #statusFilter, #sourcePathFilter, #timeRangeFilter').on('change', () => {
             // 延迟应用，避免频繁请求
             clearTimeout(this.filterTimeout);
             this.filterTimeout = setTimeout(() => {
@@ -98,7 +100,7 @@ class AuditLogsManager {
     
     async loadLogs(page = this.currentPage) {
         try {
-            showLoading('#logsTable', 10);
+            showLoading('#logsTable', 7);
             
             const params = new URLSearchParams({
                 skip: (page - 1) * this.pageSize,
@@ -108,6 +110,9 @@ class AuditLogsManager {
             // 添加过滤条件
             if (this.filters.api_key) {
                 params.append('api_key', this.filters.api_key);
+            }
+            if (this.filters.caller) {
+                params.append('caller', this.filters.caller);
             }
             if (this.filters.method) {
                 params.append('method', this.filters.method);
@@ -158,22 +163,13 @@ class AuditLogsManager {
             const statusClass = this.getStatusClass(log.status_code);
             const methodClass = this.getMethodClass(log.method);
             
-            return `
+            const row = `
                 <tr>
                     <td>
-                        <small class="text-muted">
-                            ${formatDateTime(log.created_at)}
-                        </small>
+                        <small class="text-muted">${formatDateTime(log.created_at)}</small>
                     </td>
                     <td>
-                        <code class="small">
-                            ${log.api_key ? escapeHtml(log.api_key.substring(0, 12)) + '...' : 'N/A'}
-                        </code>
-                    </td>
-                    <td>
-                        <small class="text-muted">
-                            ${escapeHtml(log.source_path || 'N/A')}
-                        </small>
+                        <small class="text-muted" title="${escapeHtml(log.api_key || '')}">${escapeHtml(log.api_key_source_path || 'N/A')}</small>
                     </td>
                     <td>
                         <span class="badge ${methodClass}">${escapeHtml(log.method)}</span>
@@ -181,7 +177,7 @@ class AuditLogsManager {
                     <td>
                         <small>
                             ${escapeHtml(log.path || 'N/A')}
-                            ${log.target_url ? `<br><span class="text-muted">→ ${escapeHtml(log.target_url.substring(0, 40))}...</span>` : ''}
+                            ${log.target_url ? `<br><span class="text-muted">→ ${escapeHtml(log.target_url.substring(0, 60))}...</span>` : ''}
                         </small>
                     </td>
                     <td>
@@ -193,21 +189,6 @@ class AuditLogsManager {
                         </span>
                     </td>
                     <td>
-                        <small class="text-muted">
-                            ${formatBytes(log.request_size || 0)}
-                        </small>
-                    </td>
-                    <td>
-                        <small class="text-muted">
-                            ${formatBytes(log.response_size || 0)}
-                        </small>
-                    </td>
-                    <td>
-                        <small class="text-muted">
-                            ${escapeHtml(log.ip_address || 'N/A')}
-                        </small>
-                    </td>
-                    <td>
                         <button class="btn btn-sm btn-outline-info" 
                                 onclick="auditLogsManager.viewLogDetail('${log.request_id}')"
                                 title="查看详情">
@@ -216,6 +197,7 @@ class AuditLogsManager {
                     </td>
                 </tr>
             `;
+            return row;
         }).join('');
         
         tbody.html(rows);
@@ -290,27 +272,34 @@ class AuditLogsManager {
     }
     
     applyFilters() {
-        this.filters.api_key = $('#apiKeyFilter').val();
-        this.filters.method = $('#methodFilter').val();
-        this.filters.status_code = $('#statusFilter').val();
-        this.filters.source_path = $('#sourcePathFilter').val();
-        this.filters.time_range = $('#timeRangeFilter').val();
-        
         this.currentPage = 1;
+        this.filters = {
+            api_key: $('#apiKeyFilter').val().trim(),
+            caller: $('#callerFilter').val().trim(),
+            method: $('#methodFilter').val(),
+            status_code: $('#statusFilter').val().trim(),
+            source_path: $('#sourcePathFilter').val().trim(),
+            time_range: $('#timeRangeFilter').val()
+        };
         this.loadLogs();
         this.updateStats();
     }
     
     resetFilters() {
         $('#apiKeyFilter').val('');
+        $('#callerFilter').val('');
         $('#methodFilter').val('');
         $('#statusFilter').val('');
         $('#sourcePathFilter').val('');
         $('#timeRangeFilter').val('');
         
         this.filters = {
-            api_key: '', method: '', status_code: '', 
-            source_path: '', time_range: ''
+            api_key: '',
+            caller: '',
+            method: '',
+            status_code: '',
+            source_path: '',
+            time_range: ''
         };
         
         this.currentPage = 1;
@@ -320,34 +309,44 @@ class AuditLogsManager {
     
     async updateStats() {
         try {
-            // 使用当前过滤条件获取统计信息
-            const params = new URLSearchParams();
-            
-            if (this.filters.api_key) {
-                params.append('api_key', this.filters.api_key);
-            }
-            if (this.filters.method) {
-                params.append('method', this.filters.method);
-            }
-            if (this.filters.status_code) {
-                params.append('status_code', this.filters.status_code);
-            }
-            if (this.filters.source_path) {
-                params.append('source_path', this.filters.source_path);
-            }
-            
-            // 获取大量数据用于统计
-            params.append('limit', '1000');
-            
-            const response = await apiClient.get(`/logs?${params}`);
-            
+            const response = await apiClient.get('/metrics');
             if (response.ok) {
-                const logs = await response.json();
-                this.calculateStats(logs);
+                const stats = await response.json();
+                $('#totalRequests').text(stats.total_requests || 0);
+                const successRequests = (stats.total_requests || 0) - (stats.total_errors || 0);
+                $('#successRequests').text(successRequests);
+                $('#errorRequests').text(stats.total_errors || 0);
+                $('#avgResponseTime').text(stats.average_response_time || 0);
+
+                // 渲染 Top 5 路径
+                this.renderTopList('#topPathsList', stats.top_paths, 'path');
+
+                // 渲染 Top 5 API Keys
+                this.renderTopList('#topApiKeysList', stats.top_api_keys, 'source_path');
+
+            } else {
+                console.error('获取统计数据失败');
             }
-            
         } catch (error) {
-            console.error('更新统计信息失败:', error);
+            console.error('更新统计数据时出错:', error);
+        }
+    }
+    
+    renderTopList(selector, items, keyField) {
+        const list = $(selector);
+        list.empty();
+        if (items && items.length > 0) {
+            items.forEach(item => {
+                const li = `
+                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                        <span class="text-truncate" title="${escapeHtml(item[keyField])}">${escapeHtml(item[keyField])}</span>
+                        <span class="badge bg-primary rounded-pill">${item.count}</span>
+                    </li>
+                `;
+                list.append(li);
+            });
+        } else {
+            list.append('<li class="list-group-item text-muted">暂无数据</li>');
         }
     }
     
@@ -516,6 +515,7 @@ class AuditLogsManager {
                 limit: maxLogsToExport
             });
             if (this.filters.api_key) params.append('api_key', this.filters.api_key);
+            if (this.filters.caller) params.append('caller', this.filters.caller);
             if (this.filters.method) params.append('method', this.filters.method);
             if (this.filters.status_code) params.append('status_code', this.filters.status_code);
             if (this.filters.source_path) params.append('source_path', this.filters.source_path);
@@ -634,6 +634,21 @@ class AuditLogsManager {
                     console.error('复制失败:', err);
                     showAlert('复制日志详情失败', 'danger');
                 });
+        }
+    }
+
+    async loadKeySources() {
+        try {
+            const response = await apiClient.get('/keys/sources');
+            if (response.ok) {
+                const sources = await response.json();
+                const select = $('#callerFilter');
+                sources.forEach(source => {
+                    select.append(`<option value="${escapeHtml(source)}">${escapeHtml(source)}</option>`);
+                });
+            }
+        } catch (error) {
+            console.error('加载Key来源失败:', error);
         }
     }
 }
