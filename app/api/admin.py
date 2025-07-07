@@ -2,17 +2,30 @@
 M-FastGate v0.2.0 管理接口
 """
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import List, Optional
+import uuid
+import json
+import io
+import csv
+import httpx
+import time
+
 from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi.responses import StreamingResponse
+from sqlalchemy import func, and_
 from sqlalchemy.orm import Session
+
 from ..database import get_db
 from ..middleware.auth import verify_admin_token
 from ..services.key_manager import KeyManager
 from ..services.audit_service import AuditService
-from ..models.api_key import APIKeyCreate, APIKeyUpdate, APIKeyResponse
-from ..models.proxy_route import ProxyRouteCreate, ProxyRouteDB, ProxyRouteUpdate, ProxyRouteResponse
-from ..models.audit_log import AuditLogResponse
+from ..models.api_key import APIKeyCreate, APIKeyUpdate, APIKeyResponse, APIKeyDB
+from ..models.proxy_route import (
+    ProxyRouteCreate, ProxyRouteDB, ProxyRouteUpdate, ProxyRouteResponse,
+    dict_to_json, list_to_json
+)
+from ..models.audit_log import AuditLogResponse, AuditLogDB, china_tz
 from ..config import settings
 
 router = APIRouter()
@@ -47,6 +60,18 @@ async def list_api_keys(
     """
     key_manager = KeyManager(db)
     return key_manager.list_keys(skip=skip, limit=limit, source_path=source_path, is_active=is_active)
+
+
+@router.get("/keys/sources")
+async def list_key_sources(
+    db: Session = Depends(get_db),
+    token: str = Depends(verify_admin_token)
+) -> List[str]:
+    """
+    获取所有唯一的 API Key 来源路径
+    """
+    sources = db.query(APIKeyDB.source_path).distinct().all()
+    return [source[0] for source in sources if source[0]]
 
 
 @router.get("/keys/{key_id}")
@@ -118,10 +143,6 @@ async def create_proxy_route(
     """
     创建新的代理路由配置
     """
-    from ..models.proxy_route import ProxyRouteDB, dict_to_json, list_to_json
-    import uuid
-    import json
-    
     # 生成路由ID
     route_id = route_data.route_name.lower().replace(" ", "-").replace("_", "-")
     if db.query(ProxyRouteDB).filter(ProxyRouteDB.route_id == route_id).first():
@@ -175,8 +196,6 @@ async def list_proxy_routes(
     """
     获取代理路由配置列表
     """
-    from ..models.proxy_route import ProxyRouteDB
-    
     query = db.query(ProxyRouteDB)
     
     if is_active is not None:
@@ -195,8 +214,6 @@ async def get_proxy_route(
     """
     获取单个代理路由配置详情
     """
-    from ..models.proxy_route import ProxyRouteDB
-    
     route = db.query(ProxyRouteDB).filter(ProxyRouteDB.route_id == route_id).first()
     if not route:
         raise HTTPException(
@@ -216,8 +233,6 @@ async def update_proxy_route(
     """
     更新代理路由配置
     """
-    from ..models.proxy_route import ProxyRouteDB, dict_to_json, list_to_json
-    
     route = db.query(ProxyRouteDB).filter(ProxyRouteDB.route_id == route_id).first()
     if not route:
         raise HTTPException(
@@ -250,9 +265,6 @@ def convert_db_route_to_response(db_route: 'ProxyRouteDB') -> ProxyRouteResponse
     """
     将数据库路由对象转换为API响应对象
     """
-    from ..models.proxy_route import json_to_dict
-    import json
-    
     def safe_json_parse(json_str, default=None):
         """安全解析JSON字符串"""
         if not json_str:
@@ -295,8 +307,6 @@ async def delete_proxy_route(
     """
     删除代理路由配置
     """
-    from ..models.proxy_route import ProxyRouteDB
-    
     route = db.query(ProxyRouteDB).filter(ProxyRouteDB.route_id == route_id).first()
     if not route:
         raise HTTPException(
@@ -320,8 +330,6 @@ async def toggle_proxy_route(
     """
     切换代理路由启用/禁用状态
     """
-    from ..models.proxy_route import ProxyRouteDB
-    
     route = db.query(ProxyRouteDB).filter(ProxyRouteDB.route_id == route_id).first()
     if not route:
         raise HTTPException(
@@ -347,11 +355,7 @@ async def test_proxy_route(
     """
     测试代理路由配置
     """
-    from ..models.proxy_route import ProxyRouteDB
     from ..services.route_matcher import RouteMatcher
-    from ..services.proxy_engine import ProxyEngine
-    import httpx
-    import time
     
     route = db.query(ProxyRouteDB).filter(ProxyRouteDB.route_id == route_id).first()
     if not route:
@@ -416,7 +420,6 @@ async def test_proxy_route(
         # 应用请求头转换
         processed_headers = test_headers.copy()
         if route.add_headers:
-            import json
             add_headers = json.loads(route.add_headers) if isinstance(route.add_headers, str) else route.add_headers
             processed_headers.update(add_headers)
             test_result["test_result"]["headers_applied"] = True
@@ -424,7 +427,6 @@ async def test_proxy_route(
         # 应用请求体转换
         processed_body = test_body.copy()
         if route.add_body_fields:
-            import json
             add_body_fields = json.loads(route.add_body_fields) if isinstance(route.add_body_fields, str) else route.add_body_fields
             processed_body.update(add_body_fields)
             test_result["test_result"]["body_modified"] = True
@@ -465,6 +467,7 @@ async def get_audit_logs(
     skip: int = Query(0, ge=0, description="跳过的记录数"),
     limit: int = Query(50, ge=1, le=10000, description="返回的记录数"),
     api_key: Optional[str] = Query(None, description="按 API Key 过滤"),
+    caller: Optional[str] = Query(None, description="按调用者名称过滤"),
     source_path: Optional[str] = Query(None, description="按来源路径过滤"),
     method: Optional[str] = Query(None, description="按请求方法过滤"),
     path: Optional[str] = Query(None, description="按请求路径过滤"),
@@ -483,6 +486,7 @@ async def get_audit_logs(
         offset=skip, 
         limit=limit,
         api_key=api_key,
+        caller=caller,
         source_path=source_path,
         method=method,
         status_code=status_code,
@@ -510,11 +514,6 @@ async def export_audit_logs(
     """
     导出审计日志
     """
-    from fastapi.responses import StreamingResponse
-    import io
-    import csv
-    import json
-    
     audit_service = AuditService()
     logs = audit_service.get_logs(
         offset=0,
@@ -594,8 +593,6 @@ async def get_audit_log(
     """
     获取单条审计日志详情
     """
-    from ..models.audit_log import AuditLogDB
-    
     db_log = db.query(AuditLogDB).filter(AuditLogDB.id == log_id).first()
     if not db_log:
         raise HTTPException(
@@ -604,7 +601,6 @@ async def get_audit_log(
         )
     
     # 转换为响应模型
-    from ..services.audit_service import AuditService
     audit_service = AuditService()
     return audit_service._to_response(db_log)
 
@@ -617,11 +613,6 @@ async def get_metrics(
     """
     获取实时统计指标
     """
-    from ..models.api_key import APIKeyDB
-    from ..models.proxy_route import ProxyRouteDB
-    from ..models.audit_log import AuditLogDB
-    from sqlalchemy import func
-    
     # 获取基础统计
     total_keys = db.query(APIKeyDB).count()
     active_keys = db.query(APIKeyDB).filter(APIKeyDB.is_active == True).count()
@@ -650,6 +641,15 @@ async def get_metrics(
         func.count(AuditLogDB.source_path).label('count')
     ).group_by(AuditLogDB.source_path).order_by(func.count(AuditLogDB.source_path).desc()).limit(5).all()
     
+    # 获取TOP API Key 调用者
+    top_api_keys = db.query(
+        APIKeyDB.source_path,
+        func.count(AuditLogDB.id).label('count')
+    ).select_from(AuditLogDB).join(APIKeyDB, AuditLogDB.api_key == APIKeyDB.key_value)\
+     .group_by(APIKeyDB.source_path)\
+     .order_by(func.count(AuditLogDB.id).desc())\
+     .limit(5).all()
+
     # 状态码分布
     status_distribution = {}
     status_stats = db.query(
@@ -671,6 +671,7 @@ async def get_metrics(
         "active_routes": active_routes,
         "top_paths": [{"path": path, "count": count} for path, count in top_paths],
         "top_source_paths": [{"source_path": source_path, "count": count} for source_path, count in top_source_paths],
+        "top_api_keys": [{"source_path": path, "count": count} for path, count in top_api_keys],
         "status_distribution": status_distribution
     }
 
@@ -684,10 +685,6 @@ async def get_hourly_metrics(
     """
     获取按小时统计的指标数据
     """
-    from ..models.audit_log import AuditLogDB, china_tz
-    from sqlalchemy import func, and_
-    from datetime import datetime, timedelta
-    
     # 计算时间范围 - 使用中国时区
     end_time = datetime.now(china_tz)
     start_time = end_time - timedelta(hours=hours)
@@ -732,10 +729,6 @@ async def get_daily_metrics(
     """
     获取按天统计的指标数据
     """
-    from ..models.audit_log import AuditLogDB, china_tz
-    from sqlalchemy import func, and_
-    from datetime import datetime, timedelta
-    
     # 计算时间范围 - 使用中国时区
     end_time = datetime.now(china_tz)
     start_time = end_time - timedelta(days=days)

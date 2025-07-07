@@ -38,51 +38,42 @@
             <div class="card-body">
                 <form id="filterForm" class="row g-3">
                     <div class="col-md-3">
-                        <label class="form-label">API Key</label>
-                        <input type="text" class="form-control" id="apiKeyFilter" 
-                               placeholder="输入API Key...">
-                    </div>
-                    <div class="col-md-2">
-                        <label class="form-label">请求方法</label>
-                        <select class="form-select" id="methodFilter">
-                            <option value="">全部</option>
-                            <option value="GET">GET</option>
-                            <option value="POST">POST</option>
-                            <option value="PUT">PUT</option>
-                            <option value="DELETE">DELETE</option>
-                            <option value="PATCH">PATCH</option>
-                        </select>
-                    </div>
-                    <div class="col-md-2">
-                        <label class="form-label">状态码</label>
-                        <select class="form-select" id="statusFilter">
-                            <option value="">全部</option>
-                            <option value="200">200 (成功)</option>
-                            <option value="400">400 (请求错误)</option>
-                            <option value="401">401 (未授权)</option>
-                            <option value="404">404 (未找到)</option>
-                            <option value="500">500 (服务器错误)</option>
-                            <option value="502">502 (网关错误)</option>
-                            <option value="504">504 (网关超时)</option>
-                        </select>
-                    </div>
-                    <div class="col-md-2">
-                        <label class="form-label">来源路径</label>
-                        <input type="text" class="form-control" id="sourcePathFilter" 
-                               placeholder="来源路径...">
+                        <label for="apiKeyFilter" class="form-label">API Key</label>
+                        <input type="text" class="form-control" id="apiKeyFilter" placeholder="搜索 API Key...">
                     </div>
                     <div class="col-md-3">
-                        <label class="form-label">时间范围</label>
-                        <div class="input-group">
-                            <select class="form-select" id="timeRangeFilter">
-                                <option value="">全部时间</option>
-                                <option value="1h">最近1小时</option>
-                                <option value="6h">最近6小时</option>
-                                <option value="24h">最近24小时</option>
-                                <option value="7d">最近7天</option>
-                                <option value="30d">最近30天</option>
-                            </select>
-                        </div>
+                        <label for="callerFilter" class="form-label">Key 来源</label>
+                        <select class="form-select" id="callerFilter">
+                            <option value="" selected>所有来源</option>
+                            <!-- Options will be populated by JS -->
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <label for="sourcePathFilter" class="form-label">来源路径</label>
+                        <input type="text" class="form-control" id="sourcePathFilter" placeholder="例如: /api/v1">
+                    </div>
+                    <div class="col-md-3">
+                        <label for="methodFilter" class="form-label">请求方法</label>
+                        <select class="form-select" id="methodFilter">
+                            <option value="" selected>所有方法</option>
+                            <option value="GET">GET</option>
+                            <option value="POST">POST</option>
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <label for="statusFilter" class="form-label">状态码</label>
+                        <input type="text" class="form-control" id="statusFilter" placeholder="例如: 200, 404, 5xx">
+                    </div>
+                    <div class="col-md-3">
+                        <label for="timeRangeFilter" class="form-label">时间范围</label>
+                        <select class="form-select" id="timeRangeFilter">
+                            <option value="" selected>全部时间</option>
+                            <option value="1h">最近1小时</option>
+                            <option value="6h">最近6小时</option>
+                            <option value="24h">最近24小时</option>
+                            <option value="7d">最近7天</option>
+                            <option value="30d">最近30天</option>
+                        </select>
                     </div>
                 </form>
                 <div class="row mt-3">
@@ -141,6 +132,34 @@
     </div>
 </div>
 
+<!-- 更多统计 -->
+<div class="row mb-4">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h6 class="mb-0"><i class="fas fa-route me-2"></i>Top 5 访问路径</h6>
+            </div>
+            <div class="card-body">
+                <ul class="list-group list-group-flush" id="topPathsList">
+                    <!-- Data will be populated by JS -->
+                </ul>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h6 class="mb-0"><i class="fas fa-user-tag me-2"></i>Top 5 调用者</h6>
+            </div>
+            <div class="card-body">
+                <ul class="list-group list-group-flush" id="topApiKeysList">
+                    <!-- Data will be populated by JS -->
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- 日志列表 -->
 <div class="row">
     <div class="col-12">
@@ -170,21 +189,17 @@
                         <thead class="table-light">
                             <tr>
                                 <th width="140">时间</th>
-                                <th width="120">API Key</th>
-                                <th width="120">用户标识</th>
+                                <th width="150">Key 来源</th>
                                 <th width="80">方法</th>
                                 <th>路径</th>
                                 <th width="100">状态</th>
-                                <th width="100">响应时间</th>
-                                <th width="80">请求大小</th>
-                                <th width="80">响应大小</th>
-                                <th width="80">IP地址</th>
+                                <th width="100">耗时 (ms)</th>
                                 <th width="60">操作</th>
                             </tr>
                         </thead>
                         <tbody id="logsTable">
                             <tr>
-                                <td colspan="11" class="text-center text-muted">
+                                <td colspan="7" class="text-center text-muted">
                                     <i class="fas fa-spinner fa-spin me-2"></i>
                                     加载中...
                                 </td>

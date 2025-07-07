@@ -112,12 +112,13 @@ class AuditLogResponse(BaseModel):
     """审计日志响应模型"""
     id: str
     request_id: str
-    api_key: Optional[str]
-    source_path: Optional[str]
-    method: str
-    path: str
-    target_url: Optional[str]
-    status_code: Optional[int]
+    api_key: Optional[str] = None
+    api_key_source_path: Optional[str] = None
+    source_path: Optional[str] = None
+    method: Optional[str] = None
+    path: Optional[str] = None
+    target_url: Optional[str] = None
+    status_code: Optional[int] = None
     
     # 时间相关字段
     request_time: datetime
