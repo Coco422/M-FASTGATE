@@ -138,7 +138,7 @@ class AuditLogsManager {
             
         } catch (error) {
             console.error('加载审计日志失败:', error);
-            showError('#logsTable', '加载审计日志失败: ' + error.message, 10);
+            showError('#logsTable', '加载审计日志失败: ' + error.message, 7);
             showAlert('加载审计日志失败: ' + error.message, 'danger');
             this.currentLogs = []; // Clear logs on error
         }
@@ -150,7 +150,7 @@ class AuditLogsManager {
         if (!logs || logs.length === 0) {
             tbody.html(`
                 <tr>
-                    <td colspan="11" class="text-center text-muted py-4">
+                    <td colspan="7" class="text-center text-muted py-4">
                         <i class="fas fa-inbox fa-2x mb-2"></i><br>
                         暂无日志数据
                     </td>
