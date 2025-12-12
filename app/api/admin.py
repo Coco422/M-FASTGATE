@@ -37,7 +37,7 @@ router = APIRouter()
 async def create_api_key(
     key_data: APIKeyCreate,
     db: Session = Depends(get_db),
-    token: str = Depends(verify_admin_token)
+    admin_token: str = Depends(verify_admin_token)
 ) -> APIKeyResponse:
     """
     创建新的 API Key
@@ -53,7 +53,7 @@ async def list_api_keys(
     source_path: Optional[str] = Query(None, description="按来源路径过滤"),
     is_active: Optional[bool] = Query(None, description="按活跃状态过滤"),
     db: Session = Depends(get_db),
-    token: str = Depends(verify_admin_token)
+    admin_token: str = Depends(verify_admin_token)
 ) -> List[APIKeyResponse]:
     """
     获取 API Key 列表
@@ -65,7 +65,7 @@ async def list_api_keys(
 @router.get("/keys/sources")
 async def list_key_sources(
     db: Session = Depends(get_db),
-    token: str = Depends(verify_admin_token)
+    admin_token: str = Depends(verify_admin_token)
 ) -> List[str]:
     """
     获取所有唯一的 API Key 来源路径
@@ -78,7 +78,7 @@ async def list_key_sources(
 async def get_api_key(
     key_id: str,
     db: Session = Depends(get_db),
-    token: str = Depends(verify_admin_token)
+    admin_token: str = Depends(verify_admin_token)
 ) -> APIKeyResponse:
     """
     获取 API Key 详情
@@ -98,7 +98,7 @@ async def update_api_key(
     key_id: str,
     key_data: APIKeyUpdate,
     db: Session = Depends(get_db),
-    token: str = Depends(verify_admin_token)
+    admin_token: str = Depends(verify_admin_token)
 ) -> APIKeyResponse:
     """
     更新 API Key
@@ -117,7 +117,7 @@ async def update_api_key(
 async def delete_api_key(
     key_id: str,
     db: Session = Depends(get_db),
-    token: str = Depends(verify_admin_token)
+    admin_token: str = Depends(verify_admin_token)
 ):
     """
     删除 API Key
@@ -138,7 +138,7 @@ async def delete_api_key(
 async def create_proxy_route(
     route_data: ProxyRouteCreate,
     db: Session = Depends(get_db),
-    token: str = Depends(verify_admin_token)
+    admin_token: str = Depends(verify_admin_token)
 ) -> ProxyRouteResponse:
     """
     创建新的代理路由配置
@@ -191,7 +191,7 @@ async def list_proxy_routes(
     limit: int = Query(100, ge=1, le=1000, description="返回的记录数"),
     is_active: Optional[bool] = Query(None, description="按活跃状态过滤"),
     db: Session = Depends(get_db),
-    token: str = Depends(verify_admin_token)
+    admin_token: str = Depends(verify_admin_token)
 ) -> List[ProxyRouteResponse]:
     """
     获取代理路由配置列表
@@ -209,7 +209,7 @@ async def list_proxy_routes(
 async def get_proxy_route(
     route_id: str,
     db: Session = Depends(get_db),
-    token: str = Depends(verify_admin_token)
+    admin_token: str = Depends(verify_admin_token)
 ) -> ProxyRouteResponse:
     """
     获取单个代理路由配置详情
@@ -228,7 +228,7 @@ async def update_proxy_route(
     route_id: str,
     route_data: ProxyRouteUpdate,
     db: Session = Depends(get_db),
-    token: str = Depends(verify_admin_token)
+    admin_token: str = Depends(verify_admin_token)
 ) -> ProxyRouteResponse:
     """
     更新代理路由配置
@@ -302,7 +302,7 @@ def convert_db_route_to_response(db_route: 'ProxyRouteDB') -> ProxyRouteResponse
 async def delete_proxy_route(
     route_id: str,
     db: Session = Depends(get_db),
-    token: str = Depends(verify_admin_token)
+    admin_token: str = Depends(verify_admin_token)
 ):
     """
     删除代理路由配置
@@ -325,7 +325,7 @@ async def toggle_proxy_route(
     route_id: str,
     toggle_data: dict,
     db: Session = Depends(get_db),
-    token: str = Depends(verify_admin_token)
+    admin_token: str = Depends(verify_admin_token)
 ):
     """
     切换代理路由启用/禁用状态
@@ -350,7 +350,7 @@ async def test_proxy_route(
     route_id: str,
     test_data: dict,
     db: Session = Depends(get_db),
-    token: str = Depends(verify_admin_token)
+    admin_token: str = Depends(verify_admin_token)
 ):
     """
     测试代理路由配置
@@ -476,7 +476,7 @@ async def get_audit_logs(
     end_time: Optional[str] = Query(None, description="结束时间过滤（ISO格式）"),
     is_stream: Optional[bool] = Query(None, description="按流式响应过滤"),
     db: Session = Depends(get_db),
-    token: str = Depends(verify_admin_token)
+    admin_token: str = Depends(verify_admin_token)
 ):
     """
     获取审计日志
@@ -509,7 +509,7 @@ async def export_audit_logs(
     start_time: Optional[str] = Query(None, description="开始时间过滤（ISO格式）"),
     end_time: Optional[str] = Query(None, description="结束时间过滤（ISO格式）"),
     db: Session = Depends(get_db),
-    token: str = Depends(verify_admin_token)
+    admin_token: str = Depends(verify_admin_token)
 ):
     """
     导出审计日志
@@ -588,7 +588,7 @@ async def export_audit_logs(
 async def get_audit_log(
     log_id: str,
     db: Session = Depends(get_db),
-    token: str = Depends(verify_admin_token)
+    admin_token: str = Depends(verify_admin_token)
 ):
     """
     获取单条审计日志详情
@@ -608,7 +608,7 @@ async def get_audit_log(
 @router.get("/metrics")
 async def get_metrics(
     db: Session = Depends(get_db),
-    token: str = Depends(verify_admin_token)
+    admin_token: str = Depends(verify_admin_token)
 ):
     """
     获取实时统计指标
@@ -680,7 +680,7 @@ async def get_metrics(
 async def get_hourly_metrics(
     hours: int = Query(24, ge=1, le=168, description="获取最近多少小时的数据"),
     db: Session = Depends(get_db),
-    token: str = Depends(verify_admin_token)
+    admin_token: str = Depends(verify_admin_token)
 ):
     """
     获取按小时统计的指标数据
@@ -724,7 +724,7 @@ async def get_hourly_metrics(
 async def get_daily_metrics(
     days: int = Query(30, ge=1, le=365, description="获取最近多少天的数据"),
     db: Session = Depends(get_db),
-    token: str = Depends(verify_admin_token)
+    admin_token: str = Depends(verify_admin_token)
 ):
     """
     获取按天统计的指标数据

@@ -14,14 +14,14 @@ class APIClient {
         this.baseURL = window.apiBaseUrl || '/admin';
     }
     
-    // 获取完整的API URL（包含token）
+    // 获取完整的API URL（包含admin_token）
     getApiUrl(endpoint) {
         let url = this.baseURL + endpoint;
         
-        // 如果endpoint不包含token参数，则添加
-        if (adminToken && !url.includes('token=')) {
+        // 如果endpoint不包含admin_token参数，则添加
+        if (adminToken && !url.includes('admin_token=')) {
             const separator = url.includes('?') ? '&' : '?';
-            url += separator + 'token=' + encodeURIComponent(adminToken);
+            url += separator + 'admin_token=' + encodeURIComponent(adminToken);
         }
         
         return url;
@@ -95,8 +95,8 @@ $(document).ready(function() {
  * 初始化Token管理
  */
 function initTokenManagement() {
-    // 从URL参数中获取token
-    adminToken = getUrlParameter('token');
+    // 从URL参数中获取admin_token
+    adminToken = getUrlParameter('admin_token');
     
     console.log('Admin token:', adminToken); // 调试日志
     
@@ -161,13 +161,13 @@ function setActiveNavigation() {
 }
 
 /**
- * 向URL添加token参数
+ * 向URL添加admin_token参数
  */
 function addTokenToUrl(url) {
     if (!url || !adminToken) return url;
     
     const separator = url.includes('?') ? '&' : '?';
-    return url + separator + 'token=' + encodeURIComponent(adminToken);
+    return url + separator + 'admin_token=' + encodeURIComponent(adminToken);
 }
 
 /**

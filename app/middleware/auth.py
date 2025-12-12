@@ -94,14 +94,14 @@ api_key_auth = APIKeyAuth()
 optional_api_key_auth = OptionalAPIKeyAuth()
 
 
-def verify_admin_token(token: str = Query(..., description="管理员令牌")):
+def verify_admin_token(admin_token: str = Query(..., description="管理员令牌")):
     """验证管理员令牌"""
-    if token != settings.security['admin_token']:
+    if admin_token != settings.security['admin_token']:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid admin token"
         )
-    return token
+    return admin_token
 
 
 def get_api_key_from_request(request: Request) -> Optional[str]:

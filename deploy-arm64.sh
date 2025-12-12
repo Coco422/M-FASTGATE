@@ -49,11 +49,11 @@ echo ""
 # 创建配置文件
 echo "📝 创建配置文件..."
 sudo tee config/config.yaml > /dev/null <<EOF
-# M-FastGate v0.2.0 统一配置文件
+# M-FastGate v0.3.0 统一配置文件
 
 app:
   name: "M-FastGate"
-  version: "0.2.0"
+  version: "0.3.0"
   host: "0.0.0.0"
   port: 8514
   debug: false

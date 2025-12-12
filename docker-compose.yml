@@ -1,22 +1,25 @@
 services:
   m-fastgate:
-    image: m-fastgate:latest
+    image: hub.szmckj.cn/miniai/m-fastgate:arm64-v0.3.0
+    pull_policy: never
     container_name: m-fastgate
+    working_dir: /app
     restart: unless-stopped
+    stop_grace_period: 20s
     ports:
       - "8514:8514"
     volumes:
       # 数据库持久化 (宿主机:容器) - 使用bind mount
       - type: bind
-        source: ./data
+        source: ${PWD}/data
         target: /app/data
       # 日志持久化 (宿主机:容器) - 使用bind mount
       - type: bind
-        source: ./logs
+        source: ${PWD}/logs
         target: /app/logs
       # 配置文件挂载 (宿主机:容器) - 使用bind mount
       - type: bind
-        source: ./config
+        source: ${PWD}/config
         target: /app/config
         read_only: true
     environment:
@@ -34,7 +37,3 @@ services:
 networks:
   fastgate-network:
     driver: bridge
-
-volumes:
-  fastgate-data:
-    driver: local 

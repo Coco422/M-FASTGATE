@@ -21,7 +21,7 @@ templates = Jinja2Templates(directory="app/templates")
 @router.get("/", response_class=HTMLResponse)
 async def admin_dashboard(
     request: Request,
-    token: str = Depends(verify_admin_token)
+    admin_token: str = Depends(verify_admin_token)
 ):
     """
     管理面板首页
@@ -39,7 +39,7 @@ async def admin_dashboard(
 @router.get("/keys", response_class=HTMLResponse)
 async def api_keys_page(
     request: Request,
-    token: str = Depends(verify_admin_token)
+    admin_token: str = Depends(verify_admin_token)
 ):
     """
     API Key 管理页面
@@ -56,7 +56,7 @@ async def api_keys_page(
 @router.get("/routes", response_class=HTMLResponse)
 async def proxy_routes_page(
     request: Request,
-    token: str = Depends(verify_admin_token)
+    admin_token: str = Depends(verify_admin_token)
 ):
     """
     代理路由配置页面
@@ -73,7 +73,7 @@ async def proxy_routes_page(
 @router.get("/logs", response_class=HTMLResponse)
 async def audit_logs_page(
     request: Request,
-    token: str = Depends(verify_admin_token)
+    admin_token: str = Depends(verify_admin_token)
 ):
     """
     审计日志页面
